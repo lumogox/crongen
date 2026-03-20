@@ -1735,6 +1735,103 @@ async fn resolve_merge_conflicts(
 // ─── Node Reset Command ──────────────────────────────────────
 
 #[tauri::command]
+pub async fn validate_node_runtime(
+    state: State<'_, AppState>,
+    node_id: String,
+) -> Result<NodeRuntimeValidation, String> {
+    let db = state.db.clone();
+    let db2 = db.clone();
+    let nid = node_id.clone();
+
+    let node = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_get_by_id(&conn, &nid).map_err(|e| format!("DB error: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    let session_backend = active_session_backend(state.pty.as_ref(), state.sdk.as_ref(), &node.id)
+        .map(str::to_string);
+    let session_active = session_backend.is_some();
+    let mut reconciled = false;
+    let message = if session_active {
+        if !matches!(node.status, NodeStatus::Running | NodeStatus::Paused) {
+            let db_update = state.db.clone();
+            let nid = node.id.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = db_update
+                    .lock()
+                    .map_err(|e| format!("DB lock error: {e}"))?;
+                db::node_update_status(&conn, &nid, &NodeStatus::Running, None)
+                    .map_err(|e| format!("DB error: {e}"))
+            })
+            .await
+            .map_err(|e| format!("Task error: {e}"))??;
+            reconciled = true;
+            format!(
+                "Found an active {} session and marked the node as running again.",
+                session_backend.as_deref().unwrap_or("agent")
+            )
+        } else if node.status == NodeStatus::Paused {
+            format!(
+                "The {} session is still paused. Continue it when you're ready.",
+                session_backend.as_deref().unwrap_or("agent")
+            )
+        } else {
+            format!(
+                "The {} session is still active and streaming output.",
+                session_backend.as_deref().unwrap_or("agent")
+            )
+        }
+    } else if matches!(node.status, NodeStatus::Running | NodeStatus::Paused) {
+        let db_update = state.db.clone();
+        let nid = node.id.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_update
+                .lock()
+                .map_err(|e| format!("DB lock error: {e}"))?;
+            db::node_update_status(&conn, &nid, &NodeStatus::Failed, Some(1))
+                .map_err(|e| format!("DB error: {e}"))
+        })
+        .await
+        .map_err(|e| format!("Task error: {e}"))??;
+        state.pty.publish_completion(&node.id, Some(1));
+        reconciled = true;
+        "No active agent session was found. The node was marked failed so you can retry it or reset it to pending.".to_string()
+    } else {
+        match node.status {
+            NodeStatus::Pending => "This node is idle and ready to run.".to_string(),
+            NodeStatus::Failed => {
+                "This node has already failed. Retry it or reset it to pending.".to_string()
+            }
+            NodeStatus::Completed => {
+                "This node already completed. Retry it if you want a fresh pass.".to_string()
+            }
+            NodeStatus::Merged => {
+                "This node was already merged. No runtime recovery is needed.".to_string()
+            }
+            NodeStatus::Running | NodeStatus::Paused => unreachable!(),
+        }
+    };
+
+    let nid = node_id.clone();
+    let updated = tokio::task::spawn_blocking(move || {
+        let conn = db2.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_get_by_id(&conn, &nid).map_err(|e| format!("DB error: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    Ok(NodeRuntimeValidation {
+        node: updated,
+        session_active,
+        session_backend,
+        reconciled,
+        message,
+    })
+}
+
+#[tauri::command]
 pub async fn reset_node_status(
     state: State<'_, AppState>,
     node_id: String,
