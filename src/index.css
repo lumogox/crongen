@@ -1,0 +1,198 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+@import "@xterm/xterm/css/xterm.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+
+/*
+ * Agent-Chron Design Tokens
+ * Sourced from agentcron.pen design system (40 variables)
+ */
+@theme {
+  /* ── Backgrounds ── */
+  --color-bg-base: #0E1117;
+  --color-bg-surface: #161B22;
+  --color-bg-elevated: #1C2128;
+  --color-bg-overlay: #2D333B;
+
+  /* ── Borders ── */
+  --color-border-default: #525960;
+  --color-border-subtle: #21262D;
+
+  /* ── Text ── */
+  --color-text-primary: #E6EDF3;
+  --color-text-secondary: #8B949E;
+  --color-text-muted: #656C76;
+  --color-text-disabled: #768390;
+
+  /* ── Accent ── */
+  --color-accent: #58A6FF;
+
+  /* ── Node States ── */
+  --color-node-running: #3FB950;
+  --color-node-completed: #56D364;
+  --color-node-failed: #F85149;
+  --color-node-paused: #D29922;
+  --color-node-pending: #656C76;
+
+  /* ── Merge ── */
+  --color-merge-highlight: #8957E5;
+  --color-gradient-mid: #A371F7;
+
+  /* ── Edges ── */
+  --color-edge-default: #30363D;
+  --color-edge-active: #58A6FF;
+  --color-edge-speculative: #D29922;
+  --color-edge-waiting: #656C76;
+
+  /* ── Glows (used for box-shadow) ── */
+  --color-glow-running: rgba(63, 185, 80, 0.2);
+  --color-glow-failed: rgba(248, 81, 73, 0.2);
+
+  /* ── Terminal ── */
+  --color-terminal-bg: #0E1117;
+  --color-terminal-fg: #E6EDF3;
+  --color-terminal-cursor: #58A6FF;
+  --color-terminal-selection: #264F78;
+
+  /* ── Border Radius ── */
+  --radius-node: 8px;
+  --radius-node-lg: 16px;
+
+  /* ── Font ── */
+  --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", monospace;
+
+  /* ── shadcn/ui semantic colors (mapped to Agent-Chron tokens) ── */
+  --color-background: var(--color-bg-base);
+  --color-foreground: var(--color-text-primary);
+  --color-card: var(--color-bg-surface);
+  --color-card-foreground: var(--color-text-primary);
+  --color-popover: var(--color-bg-surface);
+  --color-popover-foreground: var(--color-text-primary);
+  --color-primary: var(--color-accent);
+  --color-primary-foreground: var(--color-bg-base);
+  --color-secondary: var(--color-bg-elevated);
+  --color-secondary-foreground: var(--color-text-primary);
+  --color-muted: var(--color-bg-overlay);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-destructive: var(--color-node-failed);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--color-border-default);
+  --color-input: var(--color-border-default);
+  --color-ring: var(--color-accent);
+
+  /* ── shadcn radius ── */
+  --radius: 0.5rem;
+}
+
+/* ── Base Styles ── */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border);
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Prevent text selection on UI chrome (not terminal) */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Scrollbar styling (dark theme) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-default);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* ── React Flow Controls (dark theme) ── */
+.react-flow__controls {
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(14, 17, 23, 0.9);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  fill: var(--color-text-secondary);
+  color: var(--color-text-secondary);
+  width: 32px;
+  height: 32px;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  fill: var(--color-text-primary);
+  color: var(--color-text-primary);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.react-flow__controls-button svg {
+  fill: inherit;
+}
+
+/* ── Running node pulse ── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px var(--color-glow-running); }
+  50% { box-shadow: 0 0 16px var(--color-glow-running); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* ── Focus dimming ── */
+.focus-dimmed {
+  opacity: 0.15;
+  pointer-events: none;
+  transition: opacity 200ms;
+}
+
+/* ── Terminal panel slide-in ── */
+@keyframes slide-in-right {
+  from { transform: translateX(20%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.terminal-panel-enter {
+  animation: slide-in-right 200ms ease-out;
+}
+
