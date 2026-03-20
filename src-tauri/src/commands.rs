@@ -1840,10 +1840,66 @@ pub async fn reset_node_status(
     let db2 = db.clone();
     let nid = node_id.clone();
 
-    tokio::task::spawn_blocking(move || {
+    let node = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_update_status(&conn, &nid, &NodeStatus::Pending, None)
-            .map_err(|e| format!("DB error: {e}"))
+        db::node_get_by_id(&conn, &nid).map_err(|e| format!("DB error: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    if active_session_backend(state.pty.as_ref(), state.sdk.as_ref(), &node.id).is_some() {
+        return Err(
+            "This node still has an active session. Validate its runtime state first or continue the live session.".to_string(),
+        );
+    }
+
+    let db_project = state.db.clone();
+    let pid = node.project_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
+        let conn = db_project
+            .lock()
+            .map_err(|e| format!("DB lock error: {e}"))?;
+        db::project_get_by_id(&conn, &pid).map_err(|e| format!("DB error: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    if let Some(worktree_path) = node.worktree_path.clone() {
+        if std::path::Path::new(&worktree_path).exists() {
+            let repo_path = project.repo_path.clone();
+            let cleanup_worktree_path = worktree_path.clone();
+            let cleanup_result = tokio::task::spawn_blocking(move || {
+                git_manager::remove_worktree(&repo_path, &cleanup_worktree_path, true)
+                    .map_err(|e| format!("{e}"))
+            })
+            .await
+            .map_err(|e| format!("Task error: {e}"))?;
+
+            if let Err(err) = cleanup_result {
+                log::warn!(
+                    "Failed to remove worktree for node {} during reset: {}",
+                    node.id,
+                    err
+                );
+            }
+        }
+    }
+
+    state.pty.clear_session_artifacts(&node.id);
+    state.sdk.clear_session_artifacts(&node.id);
+
+    let db_reset = state.db.clone();
+    let nid = node_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_reset.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        conn.execute(
+            "UPDATE decision_nodes
+             SET status=?1, exit_code=NULL, worktree_path=NULL, commit_hash=NULL, updated_at=?2
+             WHERE id=?3",
+            rusqlite::params![NodeStatus::Pending.as_str(), db::now_unix(), nid],
+        )
+        .map_err(|e| format!("DB error: {e}"))?;
+        Ok::<(), String>(())
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
