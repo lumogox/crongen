@@ -1,15 +1,19 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter, State};
+use tokio::process::Command;
 
 use crate::agent_templates;
 use crate::context;
 use crate::db;
 use crate::git_manager;
 use crate::models::{
-    AgentType, AgentTypeConfig, AppSettings, DecisionNode, ExecutionMode, NodeStatus,
-    OrchestratorMode, OrchestratorStatus, Project,
+    AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
+    DecisionNode, ExecutionMode, NodeStatus, OrchestratorMode, OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -22,6 +26,323 @@ pub struct AppState {
     pub pty: Arc<PtyManager>,
     pub sdk: Arc<SdkManager>,
     pub orchestrator: Arc<OrchestratorManager>,
+}
+
+#[derive(Debug)]
+struct ResolutionInvocation {
+    program: String,
+    args: Vec<String>,
+    output_file: Option<PathBuf>,
+}
+
+fn agent_label(agent_type: &AgentType) -> &'static str {
+    match agent_type {
+        AgentType::ClaudeCode => "Claude Code",
+        AgentType::Codex => "Codex",
+        AgentType::Gemini => "Gemini",
+        AgentType::Custom => "Custom",
+    }
+}
+
+fn readiness_message(
+    role: &str,
+    agent_type: &AgentType,
+    status: &AgentProviderReadiness,
+) -> String {
+    let label = agent_label(agent_type);
+    let suffix = status
+        .detail
+        .as_deref()
+        .map(|detail| format!(" {detail}"))
+        .unwrap_or_default();
+
+    match status.status {
+        AgentProviderStatus::Ready => format!("{label} is ready for {role}."),
+        AgentProviderStatus::MissingCli => {
+            format!("{label} CLI is not installed. Open Agent Bay to finish {role} setup.{suffix}")
+        }
+        AgentProviderStatus::NeedsLogin => {
+            format!("{label} needs login before it can handle {role}. Open Agent Bay to continue.{suffix}")
+        }
+        AgentProviderStatus::ComingSoon => {
+            format!(
+                "{label} {role} support is coming soon. Choose Claude Code or Codex in Agent Bay."
+            )
+        }
+        AgentProviderStatus::Error => {
+            format!(
+                "{label} could not be validated for {role}. Open Agent Bay for details.{suffix}"
+            )
+        }
+    }
+}
+
+fn parse_claude_auth_logged_in(stdout: &str) -> Option<bool> {
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).ok()?;
+    parsed.get("loggedIn").and_then(|value| value.as_bool())
+}
+
+fn classify_codex_login_status(stdout: &str, stderr: &str, success: bool) -> AgentProviderStatus {
+    if success {
+        return AgentProviderStatus::Ready;
+    }
+
+    let combined = format!("{stdout}\n{stderr}").to_lowercase();
+    if combined.contains("not logged in")
+        || combined.contains("login required")
+        || combined.contains("authentication required")
+    {
+        AgentProviderStatus::NeedsLogin
+    } else {
+        AgentProviderStatus::Error
+    }
+}
+
+async fn get_provider_readiness(agent_type: &AgentType) -> AgentProviderReadiness {
+    match agent_type {
+        AgentType::ClaudeCode => {
+            let executable = which::which("claude");
+            if executable.is_err() {
+                return AgentProviderReadiness::new(
+                    AgentType::ClaudeCode,
+                    AgentProviderStatus::MissingCli,
+                    Some("Install the `claude` CLI and reopen Agent Bay.".to_string()),
+                    true,
+                    true,
+                    false,
+                );
+            }
+
+            match Command::new("claude")
+                .args(["auth", "status"])
+                .output()
+                .await
+            {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    match parse_claude_auth_logged_in(&stdout) {
+                        Some(true) => AgentProviderReadiness::new(
+                            AgentType::ClaudeCode,
+                            AgentProviderStatus::Ready,
+                            Some("Claude CLI is installed and authenticated.".to_string()),
+                            true,
+                            true,
+                            false,
+                        ),
+                        Some(false) => AgentProviderReadiness::new(
+                            AgentType::ClaudeCode,
+                            AgentProviderStatus::NeedsLogin,
+                            Some("Run `claude auth login` to connect Claude Code.".to_string()),
+                            true,
+                            true,
+                            false,
+                        ),
+                        None => AgentProviderReadiness::new(
+                            AgentType::ClaudeCode,
+                            AgentProviderStatus::Error,
+                            Some(format!(
+                                "Could not parse `claude auth status`. {}{}",
+                                stdout.trim(),
+                                if stderr.trim().is_empty() {
+                                    "".to_string()
+                                } else {
+                                    format!(" {}", stderr.trim())
+                                }
+                            )),
+                            true,
+                            true,
+                            false,
+                        ),
+                    }
+                }
+                Err(err) => AgentProviderReadiness::new(
+                    AgentType::ClaudeCode,
+                    AgentProviderStatus::Error,
+                    Some(format!("Failed to run `claude auth status`: {err}")),
+                    true,
+                    true,
+                    false,
+                ),
+            }
+        }
+        AgentType::Codex => {
+            let executable = which::which("codex");
+            if executable.is_err() {
+                return AgentProviderReadiness::new(
+                    AgentType::Codex,
+                    AgentProviderStatus::MissingCli,
+                    Some("Install the `codex` CLI and reopen Agent Bay.".to_string()),
+                    true,
+                    true,
+                    false,
+                );
+            }
+
+            match Command::new("codex")
+                .args(["login", "status"])
+                .output()
+                .await
+            {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let status =
+                        classify_codex_login_status(&stdout, &stderr, output.status.success());
+                    let detail = match status {
+                        AgentProviderStatus::Ready => Some(stdout.trim().to_string()),
+                        AgentProviderStatus::NeedsLogin => {
+                            Some("Run `codex login` to connect Codex.".to_string())
+                        }
+                        AgentProviderStatus::Error => Some(format!(
+                            "Unexpected `codex login status` response. {}{}",
+                            stdout.trim(),
+                            if stderr.trim().is_empty() {
+                                "".to_string()
+                            } else {
+                                format!(" {}", stderr.trim())
+                            }
+                        )),
+                        AgentProviderStatus::MissingCli | AgentProviderStatus::ComingSoon => None,
+                    };
+                    AgentProviderReadiness::new(AgentType::Codex, status, detail, true, true, false)
+                }
+                Err(err) => AgentProviderReadiness::new(
+                    AgentType::Codex,
+                    AgentProviderStatus::Error,
+                    Some(format!("Failed to run `codex login status`: {err}")),
+                    true,
+                    true,
+                    false,
+                ),
+            }
+        }
+        AgentType::Gemini => AgentProviderReadiness::new(
+            AgentType::Gemini,
+            AgentProviderStatus::ComingSoon,
+            Some("Gemini support is staged for a future release.".to_string()),
+            false,
+            false,
+            true,
+        ),
+        AgentType::Custom => AgentProviderReadiness::new(
+            AgentType::Custom,
+            AgentProviderStatus::Error,
+            Some("Custom shells are not part of Agent Bay defaults.".to_string()),
+            false,
+            false,
+            false,
+        ),
+    }
+}
+
+fn role_requires_provider_validation(agent_type: &AgentType, role: &str) -> bool {
+    !matches!((agent_type, role), (AgentType::Custom, "execution"))
+}
+
+async fn ensure_provider_ready(agent_type: &AgentType, role: &str) -> Result<(), String> {
+    if !role_requires_provider_validation(agent_type, role) {
+        return Ok(());
+    }
+
+    let readiness = get_provider_readiness(agent_type).await;
+    if readiness.ready {
+        return Ok(());
+    }
+
+    Err(readiness_message(role, agent_type, &readiness))
+}
+
+fn resolve_project_execution_model(
+    project: &Project,
+    settings: Option<&AppSettings>,
+) -> Option<String> {
+    let default_model = settings.and_then(|entry| entry.execution_model.clone());
+    match &project.type_config {
+        AgentTypeConfig::ClaudeCode(cfg) => cfg.model.clone().or(default_model),
+        AgentTypeConfig::Codex(cfg) => cfg.model.clone().or(default_model),
+        AgentTypeConfig::Gemini(cfg) => cfg.model.clone().or(default_model),
+        AgentTypeConfig::Custom(_) => default_model,
+    }
+}
+
+fn cleanup_temp_file(path: Option<&PathBuf>) {
+    if let Some(file) = path {
+        let _ = std::fs::remove_file(file);
+    }
+}
+
+fn build_merge_resolution_invocation(
+    agent_type: &AgentType,
+    repo_path: &str,
+    prompt: &str,
+    model: Option<&str>,
+) -> Result<ResolutionInvocation, String> {
+    match agent_type {
+        AgentType::ClaudeCode => {
+            let mut args = vec![
+                "-p".to_string(),
+                prompt.to_string(),
+                "--output-format".to_string(),
+                "text".to_string(),
+                "--dangerously-skip-permissions".to_string(),
+            ];
+            if let Some(value) = model {
+                args.push("--model".to_string());
+                args.push(value.to_string());
+            }
+
+            Ok(ResolutionInvocation {
+                program: "claude".to_string(),
+                args,
+                output_file: None,
+            })
+        }
+        AgentType::Codex => {
+            let output_file = std::env::temp_dir().join(format!(
+                "crongen-merge-resolution-{}.txt",
+                uuid::Uuid::new_v4()
+            ));
+            let mut args = vec![
+                "exec".to_string(),
+                "--skip-git-repo-check".to_string(),
+                "--sandbox".to_string(),
+                "workspace-write".to_string(),
+                "--output-last-message".to_string(),
+                output_file.display().to_string(),
+                "--cd".to_string(),
+                repo_path.to_string(),
+            ];
+            if let Some(value) = model {
+                args.push("--model".to_string());
+                args.push(value.to_string());
+            }
+            args.push(prompt.to_string());
+
+            Ok(ResolutionInvocation {
+                program: "codex".to_string(),
+                args,
+                output_file: Some(output_file),
+            })
+        }
+        AgentType::Gemini => Err("Gemini conflict auto-resolution is coming soon.".to_string()),
+        AgentType::Custom => {
+            Err("Custom shells do not support automatic merge conflict resolution.".to_string())
+        }
+    }
+}
+
+fn resolve_planning_agent(settings: &AppSettings) -> Result<AgentType, String> {
+    match settings.planning_agent.clone() {
+        Some(agent @ AgentType::ClaudeCode) | Some(agent @ AgentType::Codex) => Ok(agent),
+        Some(AgentType::Gemini) => {
+            Err("Gemini planning is coming soon. Choose Claude Code or Codex in Agent Bay.".to_string())
+        }
+        Some(AgentType::Custom) => {
+            Err("Custom providers are not supported for planning defaults. Choose Claude Code or Codex in Agent Bay.".to_string())
+        }
+        None => Err("Choose a planning agent in Agent Bay before generating a plan.".to_string()),
+    }
 }
 
 // ─── Project CRUD ──────────────────────────────────────────────
@@ -201,7 +522,11 @@ pub async fn toggle_project(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    log::info!("Toggled project {} to is_active={}", project.name, is_active);
+    log::info!(
+        "Toggled project {} to is_active={}",
+        project.name,
+        is_active
+    );
     Ok(project)
 }
 
@@ -252,6 +577,8 @@ pub async fn run_project_now(
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
+
+    ensure_provider_ready(&project.agent_type, "execution").await?;
 
     // 2. Check no active sessions (DB check + PTY check)
     let project_id = project.id.clone();
@@ -633,7 +960,7 @@ pub async fn merge_node_branch(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    // 6. If conflicts detected, attempt auto-resolution with Claude
+    // 6. If conflicts detected, attempt auto-resolution with the project's provider
     if !result.success && !result.conflict_files.is_empty() {
         log::info!(
             "Attempting auto-resolution of {} conflict(s) for node {}",
@@ -643,15 +970,17 @@ pub async fn merge_node_branch(
 
         let repo_for_resolve = project.repo_path.clone();
         let conflicts = result.conflict_files.clone();
-        let resolution_model = get_settings()
-            .await
-            .ok()
-            .and_then(|s| s.execution_model)
-            .unwrap_or_else(|| "haiku".to_string());
+        let resolution_settings = get_settings().await.ok();
+        let resolution_model =
+            resolve_project_execution_model(&project, resolution_settings.as_ref());
 
-        // Run Claude to resolve conflicts
-        let resolution =
-            resolve_merge_conflicts(&repo_for_resolve, &conflicts, &resolution_model).await;
+        let resolution = resolve_merge_conflicts(
+            &project.agent_type,
+            &repo_for_resolve,
+            &conflicts,
+            resolution_model.as_deref(),
+        )
+        .await;
 
         match resolution {
             Ok(summary) => {
@@ -874,6 +1203,8 @@ pub async fn run_node(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
+    ensure_provider_ready(&project.agent_type, "execution").await?;
+
     // 3. Ensure the repo path is a git repo
     let repo_path = project.repo_path.clone();
     tokio::task::spawn_blocking(move || {
@@ -1082,6 +1413,15 @@ pub async fn check_env_var(name: String) -> Result<bool, String> {
     Ok(std::env::var(&name).is_ok())
 }
 
+#[tauri::command]
+pub async fn get_agent_provider_statuses() -> Result<Vec<AgentProviderReadiness>, String> {
+    let mut statuses = Vec::with_capacity(3);
+    statuses.push(get_provider_readiness(&AgentType::ClaudeCode).await);
+    statuses.push(get_provider_readiness(&AgentType::Codex).await);
+    statuses.push(get_provider_readiness(&AgentType::Gemini).await);
+    Ok(statuses)
+}
+
 // ─── PTY Commands ─────────────────────────────────────────────
 
 #[tauri::command]
@@ -1203,6 +1543,18 @@ pub async fn start_orchestrator(
 ) -> Result<(), String> {
     let orch_mode = OrchestratorMode::from_str(&mode)?;
 
+    let db = state.db.clone();
+    let root_id = session_root_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let root = db::node_get_by_id(&conn, &root_id).map_err(|e| format!("{e}"))?;
+        db::project_get_by_id(&conn, &root.project_id).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    ensure_provider_ready(&project.agent_type, "execution").await?;
+
     state
         .orchestrator
         .start_session(
@@ -1294,12 +1646,13 @@ pub async fn mark_node_merged(state: State<'_, AppState>, node_id: String) -> Re
 
 // ─── Merge Conflict Resolution ────────────────────────────────
 
-/// Run Claude to resolve merge conflicts in-place.
+/// Run the selected provider to resolve merge conflicts in-place.
 /// Returns a summary of what was resolved.
 async fn resolve_merge_conflicts(
+    agent_type: &AgentType,
     repo_path: &str,
     conflict_files: &[String],
-    model: &str,
+    model: Option<&str>,
 ) -> Result<String, String> {
     let file_list = conflict_files.join(", ");
     let prompt = format!(
@@ -1314,27 +1667,42 @@ async fn resolve_merge_conflicts(
          Do NOT run git add or git commit — just fix the files."
     );
 
-    let output = tokio::process::Command::new("claude")
-        .args([
-            "-p",
-            &prompt,
-            "--model",
-            model,
-            "--output-format",
-            "text",
-            "--dangerously-skip-permissions",
-        ])
+    let invocation = build_merge_resolution_invocation(agent_type, repo_path, &prompt, model)?;
+    let output = tokio::process::Command::new(&invocation.program)
+        .args(&invocation.args)
         .current_dir(repo_path)
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn claude for conflict resolution: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "Failed to spawn {} for conflict resolution: {e}",
+                agent_label(agent_type)
+            )
+        })?;
 
     if !output.status.success() {
+        cleanup_temp_file(invocation.output_file.as_ref());
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Claude conflict resolution failed: {stderr}"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let details = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
+        return Err(format!(
+            "{} conflict resolution failed: {details}",
+            agent_label(agent_type)
+        ));
     }
 
-    let summary = String::from_utf8_lossy(&output.stdout).to_string();
+    let summary = if let Some(output_file) = &invocation.output_file {
+        let contents = std::fs::read_to_string(output_file)
+            .map_err(|e| format!("Failed to read conflict resolution output: {e}"));
+        cleanup_temp_file(Some(output_file));
+        contents?
+    } else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
 
     // Truncate summary for storage (keep first 500 chars)
     let summary_short = if summary.len() > 500 {
@@ -1386,11 +1754,15 @@ pub async fn generate_plan(
     prompt: String,
     complexity: Option<String>,
 ) -> Result<Vec<DecisionNode>, String> {
+    let settings = get_settings().await?;
+    let planning_agent = resolve_planning_agent(&settings)?;
+    ensure_provider_ready(&planning_agent, "planning").await?;
+
     // Look up project to get project_mode, but treat as "existing" if any
     // session has already completed (the project is no longer blank).
     let db_mode = state.db.clone();
     let pid = project_id.clone();
-    let project_mode = tokio::task::spawn_blocking(move || {
+    let (project_mode, repo_path) = tokio::task::spawn_blocking(move || {
         let conn = db_mode.lock().map_err(|e| format!("DB lock: {e}"))?;
         let project = db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))?;
         if project.project_mode == "blank" {
@@ -1400,24 +1772,23 @@ pub async fn generate_plan(
                     || r.status == crate::models::NodeStatus::Merged
             });
             if has_completed {
-                return Ok::<String, String>("existing".to_string());
+                return Ok::<(String, String), String>(("existing".to_string(), project.repo_path));
             }
         }
-        Ok(project.project_mode)
+        Ok((project.project_mode, project.repo_path))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    // Load planning model from settings
-    let planning_model = get_settings().await.ok().and_then(|s| s.planning_model);
-
-    // Generate the plan via Claude CLI
+    // Generate the plan via the selected planning provider
     let complexity_str = complexity.as_deref().unwrap_or("branching");
     let plan = plan_generator::generate_plan(
+        &planning_agent,
         &prompt,
         &project_mode,
-        planning_model.as_deref(),
+        settings.planning_model.as_deref(),
         complexity_str,
+        &repo_path,
     )
     .await?;
 
@@ -1507,4 +1878,59 @@ pub async fn get_node_context(
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_merge_resolution_invocation, classify_codex_login_status,
+        parse_claude_auth_logged_in, role_requires_provider_validation,
+    };
+    use crate::models::{AgentProviderStatus, AgentType};
+
+    #[test]
+    fn parses_claude_auth_status_even_when_logged_out() {
+        let stdout = r#"{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}"#;
+        assert_eq!(parse_claude_auth_logged_in(stdout), Some(false));
+    }
+
+    #[test]
+    fn classifies_codex_login_success_as_ready() {
+        let status = classify_codex_login_status("Logged in using ChatGPT", "", true);
+        assert_eq!(status, AgentProviderStatus::Ready);
+    }
+
+    #[test]
+    fn custom_execution_skips_provider_validation() {
+        assert!(!role_requires_provider_validation(
+            &AgentType::Custom,
+            "execution"
+        ));
+        assert!(role_requires_provider_validation(
+            &AgentType::Custom,
+            "planning"
+        ));
+        assert!(role_requires_provider_validation(
+            &AgentType::Codex,
+            "execution"
+        ));
+    }
+
+    #[test]
+    fn codex_merge_resolution_uses_output_file() {
+        let invocation = build_merge_resolution_invocation(
+            &AgentType::Codex,
+            "/tmp",
+            "Resolve the merge",
+            Some("gpt-5"),
+        )
+        .expect("codex invocation");
+
+        assert_eq!(invocation.program, "codex");
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-last-message"));
+        assert!(invocation.output_file.is_some());
+    }
 }

@@ -1,5 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentTypeConfig, AppSettings, DecisionNode, MergeResult, OrchestratorStatus, Project } from "../types";
+import type {
+  AgentProviderReadiness,
+  AgentTypeConfig,
+  AppSettings,
+  DecisionNode,
+  MergeResult,
+  OrchestratorStatus,
+  Project,
+} from "../types";
 
 // ─── Project CRUD ──────────────────────────────────────────────
 
@@ -183,6 +191,10 @@ export async function checkExecutable(name: string): Promise<boolean> {
 
 export async function checkEnvVar(name: string): Promise<boolean> {
   return invoke("check_env_var", { name });
+}
+
+export async function getAgentProviderStatuses(): Promise<AgentProviderReadiness[]> {
+  return invoke("get_agent_provider_statuses");
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────

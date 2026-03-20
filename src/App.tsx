@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { AppSettings, DecisionNode, ModalType, NodeStatus, OrchestratorMode, OrchestratorStatus, PendingDecision, Project } from "./types";
+import type {
+  AgentProviderReadiness,
+  AgentRole,
+  AgentType,
+  AppSettings,
+  DecisionNode,
+  ModalType,
+  NodeStatus,
+  OrchestratorMode,
+  OrchestratorStatus,
+  PendingDecision,
+  Project,
+} from "./types";
 import {
+  getAgentProviderStatuses,
   getProjects,
   createProject,
   updateProject,
@@ -28,6 +41,7 @@ import {
   resetNodeStatus,
   getRepoBranch,
 } from "./lib/tauri-commands";
+import { getAgentLabel } from "./lib/agent-templates";
 import { ContentArea } from "./components/ContentArea";
 import { ProjectModal } from "./components/ProjectModal";
 import { DeleteConfirm } from "./components/DeleteConfirm";
@@ -36,6 +50,15 @@ import { SessionModal } from "./components/SessionModal";
 import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
 import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModal";
 import { SettingsModal } from "./components/SettingsModal";
+
+const DEFAULT_SETTINGS: AppSettings = {
+  debug_mode: false,
+  agent_setup_seen: false,
+  planning_agent: null,
+  execution_agent: null,
+  planning_model: null,
+  execution_model: null,
+};
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -62,14 +85,21 @@ function App() {
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
 
   // ─── Settings state ────────────────────────────────────────
-  const [settings, setSettings] = useState<AppSettings>({ debug_mode: false });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [agentProviderStatuses, setAgentProviderStatuses] = useState<AgentProviderReadiness[]>([]);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [agentStatusesLoaded, setAgentStatusesLoaded] = useState(false);
   const selectedProjectIdRef = useRef<string | null>(null);
   const selectedSessionIdRef = useRef<string | null>(null);
 
   // Load projects + settings on mount
   useEffect(() => {
     loadProjects();
-    getSettings().then(setSettings).catch(() => {});
+    getSettings()
+      .then((loaded) => setSettings({ ...DEFAULT_SETTINGS, ...loaded }))
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true));
+    refreshAgentProviderStatuses().finally(() => setAgentStatusesLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -317,8 +347,157 @@ function App() {
     }
   }
 
+  async function refreshAgentProviderStatuses() {
+    try {
+      const statuses = await getAgentProviderStatuses();
+      setAgentProviderStatuses(statuses);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
+
+  const providerStatusByType = useMemo(
+    () => new Map(agentProviderStatuses.map((status) => [status.agent_type, status])),
+    [agentProviderStatuses],
+  );
+
+  const getProviderStatus = useCallback(
+    (agentType: AgentType | null | undefined) => {
+      if (!agentType) return null;
+      return providerStatusByType.get(agentType) ?? null;
+    },
+    [providerStatusByType],
+  );
+
+  const planningProviderStatus = getProviderStatus(settings.planning_agent);
+  const executionDefaultStatus = getProviderStatus(settings.execution_agent);
+  const selectedProjectExecutionStatus = useMemo<AgentProviderReadiness | null>(() => {
+    if (!selectedProject) {
+      return null;
+    }
+    if (selectedProject.agent_type === "custom") {
+      return {
+        agent_type: "custom",
+        status: "ready",
+        detail: "Custom execution is configured per project and does not use Agent Bay validation.",
+        ready: true,
+        supports_planning: false,
+        supports_execution: true,
+        coming_soon: false,
+      };
+    }
+    return getProviderStatus(selectedProject.agent_type);
+  }, [getProviderStatus, selectedProject]);
+
+  const hasReadyPlanningDefault = !!settings.planning_agent && !!planningProviderStatus?.ready;
+  const hasReadyExecutionDefault = !!settings.execution_agent && !!executionDefaultStatus?.ready;
+
+  const setupReminder = useMemo(() => {
+    if (!agentStatusesLoaded) return null;
+
+    const issues: string[] = [];
+    if (!settings.planning_agent) {
+      issues.push("Choose a planning agent");
+    } else if (!planningProviderStatus?.ready) {
+      issues.push(`${getAgentLabel(settings.planning_agent)} is not ready for planning`);
+    }
+
+    if (!settings.execution_agent) {
+      issues.push("Choose a default execution agent");
+    } else if (!executionDefaultStatus?.ready) {
+      issues.push(`${getAgentLabel(settings.execution_agent)} is not ready by default`);
+    }
+
+    if (selectedProject && selectedProjectExecutionStatus && !selectedProjectExecutionStatus.ready) {
+      issues.push(`${selectedProject.name} cannot run because ${getAgentLabel(selectedProject.agent_type)} is not ready`);
+    }
+
+    if (issues.length === 0) return null;
+    return issues[0];
+  }, [
+    agentStatusesLoaded,
+    executionDefaultStatus,
+    planningProviderStatus,
+    selectedProject,
+    selectedProjectExecutionStatus,
+    settings.execution_agent,
+    settings.planning_agent,
+  ]);
+
+  const getPrimaryMissingRole = useCallback((): AgentRole => {
+    if (!settings.planning_agent || !planningProviderStatus?.ready) {
+      return "planning";
+    }
+    return "execution";
+  }, [planningProviderStatus?.ready, settings.planning_agent]);
+
+  const openAgentBay = useCallback((options?: { forceSetup?: boolean; onboarding?: boolean; focusRole?: AgentRole }) => {
+    setModal({
+      kind: "settings",
+      forceSetup: options?.forceSetup,
+      onboarding: options?.onboarding,
+      focusRole: options?.focusRole,
+    });
+  }, []);
+
+  const guardAgentRole = useCallback(
+    (
+      role: AgentRole,
+      agentType: AgentType | null | undefined,
+      fallbackLabel: string,
+    ) => {
+      if (role === "execution" && agentType === "custom") {
+        return true;
+      }
+
+      const status = getProviderStatus(agentType);
+      if (agentType && status?.ready) {
+        return true;
+      }
+
+      const label = getAgentLabel(agentType) || fallbackLabel;
+      if (!agentType) {
+        setError(`Choose a ${role} agent in Agent Bay before continuing.`);
+      } else if (status?.status === "missing_cli") {
+        setError(`${label} is not installed yet. Finish setup in Agent Bay.`);
+      } else if (status?.status === "needs_login") {
+        setError(`${label} still needs login. Finish setup in Agent Bay.`);
+      } else if (status?.status === "coming_soon") {
+        setError(`${label} support is coming soon. Choose Claude Code or Codex in Agent Bay.`);
+      } else {
+        setError(`${label} is not ready yet. Open Agent Bay to continue.`);
+      }
+
+      openAgentBay({ focusRole: role });
+      return false;
+    },
+    [getProviderStatus, openAgentBay],
+  );
+
+  useEffect(() => {
+    if (!settingsLoaded || !agentStatusesLoaded) return;
+    if (settings.agent_setup_seen) return;
+    if (hasReadyPlanningDefault && hasReadyExecutionDefault) return;
+    if (modal) return;
+
+    openAgentBay({
+      forceSetup: true,
+      onboarding: true,
+      focusRole: getPrimaryMissingRole(),
+    });
+  }, [
+    agentStatusesLoaded,
+    getPrimaryMissingRole,
+    hasReadyExecutionDefault,
+    hasReadyPlanningDefault,
+    modal,
+    openAgentBay,
+    settings.agent_setup_seen,
+    settingsLoaded,
+  ]);
 
   // ─── Project handlers ──────────────────────────────────────
 
@@ -386,6 +565,8 @@ function App() {
 
   const handleRunNow = useCallback(
     async (projectId: string) => {
+      const project = projects.find((entry) => entry.id === projectId) ?? null;
+      if (!project || !guardAgentRole("execution", project.agent_type, "Execution")) return;
       try {
         const rootNode = await runProjectNow(projectId);
         setSessions((prev) => [rootNode, ...prev.filter((session) => session.id !== rootNode.id)]);
@@ -396,7 +577,7 @@ function App() {
         setError(String(e));
       }
     },
-    [],
+    [guardAgentRole, projects],
   );
 
   const handleSelectNode = useCallback((id: string | null) => {
@@ -517,6 +698,9 @@ function App() {
 
   const handleRunNode = useCallback(
     async (nodeId: string) => {
+      if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
+        return;
+      }
       try {
         const updated = await runNode(nodeId);
         setTreeNodes((prev) =>
@@ -526,7 +710,7 @@ function App() {
         setError(String(e));
       }
     },
-    [],
+    [guardAgentRole, selectedProject],
   );
 
   const handleUpdateNode = useCallback(
@@ -576,6 +760,9 @@ function App() {
   const handleStartOrchestrator = useCallback(
     async (mode: OrchestratorMode) => {
       if (!selectedSessionId) return;
+      if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
+        return;
+      }
       try {
         // Set initial status BEFORE starting — ensures event handlers have a
         // non-null `prev` so no progress events are lost during startup.
@@ -601,7 +788,7 @@ function App() {
         setOrchestratorStatus(null);
       }
     },
-    [selectedSessionId, treeNodes],
+    [guardAgentRole, selectedProject, selectedSessionId, treeNodes],
   );
 
   const handleSubmitDecision = useCallback(
@@ -632,7 +819,9 @@ function App() {
 
   const handleQuickRun = useCallback(
     async (prompt: string) => {
-      if (!selectedProjectId) return;
+      if (!selectedProjectId || !selectedProject) return;
+      if (!guardAgentRole("execution", selectedProject.agent_type, "Execution")) return;
+      let rootNode: DecisionNode | null = null;
       try {
         setIsGeneratingPlan(true);
         // Derive a short label: take first sentence or first N words
@@ -641,27 +830,34 @@ function App() {
           ? firstSentence
           : firstSentence.split(/\s+/).slice(0, 6).join(" ")
         ) || "Quick task";
-        const rootNode = await createRootNode(selectedProjectId, label, prompt);
-        setSessions((prev) => [rootNode, ...prev]);
-        setSelectedSessionId(rootNode.id);
-        setTreeNodes([rootNode]);
-        setSelectedNodeId(rootNode.id);
-        setModal(null);
+        rootNode = await createRootNode(selectedProjectId, label, prompt);
         // Auto-run the node
         const updated = await runNode(rootNode.id);
+        setSessions((prev) => [updated, ...prev.filter((session) => session.id !== updated.id)]);
+        setSelectedSessionId(updated.id);
         setTreeNodes([updated]);
+        setSelectedNodeId(updated.id);
+        setModal(null);
       } catch (e) {
+        if (rootNode) {
+          try {
+            await deleteNodeBranch(rootNode.id);
+          } catch (cleanupError) {
+            console.warn("Failed to clean up quick-run draft node", cleanupError);
+          }
+        }
         throw e;
       } finally {
         setIsGeneratingPlan(false);
       }
     },
-    [selectedProjectId],
+    [guardAgentRole, selectedProject, selectedProjectId],
   );
 
   const handleGeneratePlan = useCallback(
     async (prompt: string, complexity?: "linear" | "branching") => {
       if (!selectedProjectId) return;
+      if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
       try {
         setIsGeneratingPlan(true);
         const nodes = await generatePlan(selectedProjectId, prompt, complexity);
@@ -682,17 +878,20 @@ function App() {
         setIsGeneratingPlan(false);
       }
     },
-    [selectedProjectId],
+    [guardAgentRole, selectedProjectId, settings.planning_agent],
   );
 
   // ─── Settings handlers ─────────────────────────────────────
 
   const handleSaveSettings = useCallback(async (newSettings: AppSettings) => {
     try {
-      await updateSettings(newSettings);
-      setSettings(newSettings);
+      const merged = { ...DEFAULT_SETTINGS, ...newSettings };
+      await updateSettings(merged);
+      setSettings(merged);
+      await refreshAgentProviderStatuses();
     } catch (e) {
       setError(String(e));
+      throw e;
     }
   }, []);
 
@@ -768,7 +967,8 @@ function App() {
             onMergeComplete={handleMergeComplete}
             currentBranch={currentBranch}
             debugMode={settings.debug_mode}
-            onOpenSettings={() => setModal({ kind: "settings" })}
+            agentSetupReminder={setupReminder}
+            onOpenSettings={() => openAgentBay({ focusRole: getPrimaryMissingRole() })}
             onResetNode={handleResetNode}
           />
         </div>
@@ -778,6 +978,7 @@ function App() {
       {modal?.kind === "create_project" && (
         <ProjectModal
           mode="create"
+          defaultExecutionAgent={settings.execution_agent}
           onSave={handleSaveProject}
           onClose={() => setModal(null)}
         />
@@ -786,6 +987,7 @@ function App() {
         <ProjectModal
           mode="edit"
           project={modal.project}
+          defaultExecutionAgent={settings.execution_agent}
           onSave={handleSaveProject}
           onClose={() => setModal(null)}
         />
@@ -810,6 +1012,11 @@ function App() {
           onQuickRun={handleQuickRun}
           onGeneratePlan={handleGeneratePlan}
           isGenerating={isGeneratingPlan}
+          planningAgentLabel={getAgentLabel(settings.planning_agent)}
+          executionAgentLabel={selectedProject ? getAgentLabel(selectedProject.agent_type) : getAgentLabel(settings.execution_agent)}
+          planningStatus={planningProviderStatus}
+          executionStatus={selectedProjectExecutionStatus}
+          onOpenAgentSetup={(role) => openAgentBay({ focusRole: role })}
           onClose={() => setModal(null)}
         />
       )}
@@ -823,7 +1030,12 @@ function App() {
       {modal?.kind === "settings" && (
         <SettingsModal
           settings={settings}
+          statuses={agentProviderStatuses}
+          forceSetup={modal.forceSetup}
+          onboarding={modal.onboarding}
+          focusRole={modal.focusRole}
           onSave={handleSaveSettings}
+          onRefreshStatuses={refreshAgentProviderStatuses}
           onClose={() => setModal(null)}
         />
       )}

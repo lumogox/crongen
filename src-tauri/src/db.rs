@@ -92,9 +92,8 @@ pub fn now_unix() -> i64 {
 }
 
 fn has_table(conn: &Connection, table: &str) -> Result<bool> {
-    let mut stmt = conn.prepare(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1")?;
     Ok(stmt.exists(params![table])?)
 }
 

@@ -1,7 +1,7 @@
-#[path = "../src/models.rs"]
-mod models;
 #[path = "../src/db.rs"]
 mod db;
+#[path = "../src/models.rs"]
+mod models;
 
 use rusqlite::Connection;
 
@@ -162,7 +162,10 @@ fn test_db_init_creates_project_schema_and_crud() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(count, 0, "Cascade delete should have removed decision nodes");
+    assert_eq!(
+        count, 0,
+        "Cascade delete should have removed decision nodes"
+    );
 }
 
 #[test]
@@ -266,4 +269,15 @@ fn test_db_init_resets_legacy_agent_schema() {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
     assert_eq!(user_version, 1);
+}
+
+#[test]
+fn test_default_settings_start_without_agent_defaults() {
+    let settings = models::AppSettings::default();
+
+    assert!(!settings.agent_setup_seen);
+    assert!(settings.planning_agent.is_none());
+    assert!(settings.execution_agent.is_none());
+    assert!(settings.planning_model.is_none());
+    assert!(settings.execution_model.is_none());
 }

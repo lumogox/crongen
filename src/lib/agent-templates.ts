@@ -137,3 +137,10 @@ export const AGENT_TEMPLATES: Record<AgentType, AgentTypeTemplate> = {
   gemini: GEMINI_TEMPLATE,
   custom: CUSTOM_TEMPLATE,
 };
+
+export const BUILT_IN_AGENT_TYPES: AgentType[] = ["claude_code", "codex", "gemini"];
+
+export function getAgentLabel(agentType: AgentType | null | undefined): string {
+  if (!agentType) return "Unconfigured";
+  return AGENT_TEMPLATES[agentType]?.label ?? "Unknown";
+}
