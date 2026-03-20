@@ -176,9 +176,9 @@ export function OrchestratorActivity({
       </div>
 
       {/* Terminal output for the selected/current node */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {viewingNode ? (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-w-0 flex-col">
             <div className="flex items-center gap-2 border-b border-white/10 px-5 py-2">
               <div className="size-2 rounded-full bg-amber-400 animate-pulse" style={{
                 animationPlayState: viewingNode.status === "running" ? "running" : "paused",
