@@ -1,4 +1,4 @@
-# Agent-Chron
+# crongen
 
 A cross-platform desktop application for scheduling, orchestrating, and monitoring autonomous coding agents. Build decision trees of AI agent tasks, fork competing approaches, auto-merge results, and watch it all execute through an interactive visual canvas with integrated terminals.
 
@@ -51,7 +51,7 @@ Built with **Tauri 2.x** (Rust backend + React frontend).
 
 ### PTY Stdin Injection
 
-TUI-based agents (Codex, Gemini, Custom) run in raw terminal mode. Agent-Chron handles interactive prompts automatically:
+TUI-based agents (Codex, Gemini, Custom) run in raw terminal mode. crongen handles interactive prompts automatically:
 
 - **1500ms init delay** before first input (TUI startup time)
 - **Split writes**: text and Enter (`\r`) sent as separate writes with 200ms gap (TUIs treat single `text\r` as paste)
@@ -133,8 +133,8 @@ Claude Code runs headless with `--output-format stream-json`, capturing structur
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/agent-chron.git
-cd agent-chron
+git clone https://github.com/your-org/crongen.git
+cd crongen
 
 # Install frontend dependencies
 bun install
@@ -166,9 +166,9 @@ This produces platform-specific installers in `src-tauri/target/release/bundle/`
    - **Project mode** -- "Blank" (new repo) or "Existing" (use existing code)
 3. Click Save
 
-Agent-Chron will:
+crongen will:
 - Validate the repo path exists
-- Initialize a git repo if needed (with `.agent-chron-worktrees` in `.gitignore`)
+- Initialize a git repo if needed (with `.crongen-worktrees` in `.gitignore`)
 - Create an initial commit if the repo is empty
 
 ### Agent Type Configuration
@@ -235,7 +235,7 @@ agent-A   agent-B    <-- competing approaches, each in its own worktree
    final             <-- polishes result on merged branch
 ```
 
-Each executable node runs in an **isolated git worktree** on its own branch (`agent-chron/{slug}/{timestamp}`). This prevents agents from stepping on each other's changes.
+Each executable node runs in an **isolated git worktree** on its own branch (`crongen/{slug}/{timestamp}`). This prevents agents from stepping on each other's changes.
 
 ### TOON Context
 
@@ -275,7 +275,7 @@ The orchestrator runs a session's node tree in dependency order:
 
 1. Create a project with a configured agent
 2. Click **"New task"** -> enter a prompt -> **"Quick run"**
-3. Agent-Chron creates a single root node and executes it immediately
+3. crongen creates a single root node and executes it immediately
 4. Watch live output in the terminal panel
 
 ### Plan Generation
@@ -315,19 +315,19 @@ When all nodes in a session complete:
 Each executable node gets its own git worktree:
 ```
 your-repo/
-  .agent-chron-worktrees/
-    agent-chron-react-impl-1709000000/   <-- agent A's workspace
-    agent-chron-vue-impl-1709000001/     <-- agent B's workspace
+  .crongen-worktrees/
+    crongen-react-impl-1709000000/   <-- agent A's workspace
+    crongen-vue-impl-1709000001/     <-- agent B's workspace
 ```
 
 Worktrees are created from the parent node's commit, giving each agent a clean starting point. They're automatically cleaned up after a successful merge.
 
 ### Auto-Commit
 
-Before merging, Agent-Chron auto-commits any uncommitted changes in the worktree. Agents don't always commit their work, so this ensures nothing is lost:
+Before merging, crongen auto-commits any uncommitted changes in the worktree. Agents don't always commit their work, so this ensures nothing is lost:
 
 ```
-git add -A && git commit -m "Auto-commit agent work (uncommitted changes captured by Agent-Chron)"
+git add -A && git commit -m "Auto-commit agent work (uncommitted changes captured by crongen)"
 ```
 
 ### Merge with Fallback
@@ -395,7 +395,7 @@ Settings are persisted in the SQLite database.
 - **Font**: JetBrains Mono (monospace throughout)
 - **Root font size**: 13px
 - **Theme**: Dark only (bg-base: `#0E1117`)
-- **Design tokens**: sourced from `agentcron.pen` design system
+- **Design tokens**: sourced from `crongen.pen` design system
 - **Node state colors**: running (green), completed (bright green), failed (red), paused (yellow), pending (gray), merged (purple)
 
 ---
@@ -403,7 +403,7 @@ Settings are persisted in the SQLite database.
 ## Project Structure
 
 ```
-agent-chron/
+crongen/
 ├── src/                          # React frontend
 │   ├── App.tsx                   # Root state management & event listeners
 │   ├── main.tsx                  # Entry point
@@ -492,7 +492,7 @@ Three tables in SQLite (stored in Tauri's app data directory):
 | parent_id | TEXT FK | References decision_nodes(id), NULL for root |
 | label | TEXT | Short display label |
 | prompt | TEXT | Agent instruction |
-| branch_name | TEXT | Git branch (e.g., agent-chron/slug/timestamp) |
+| branch_name | TEXT | Git branch (e.g., crongen/slug/timestamp) |
 | worktree_path | TEXT | Absolute path to git worktree |
 | commit_hash | TEXT | HEAD commit when created |
 | status | TEXT | pending/running/paused/completed/failed/merged |

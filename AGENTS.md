@@ -1,6 +1,6 @@
-# Agent-Chron
+# crongen
 
-Agent-Chron is a Tauri 2 desktop app for scheduling, orchestrating, and monitoring autonomous coding agents. Users configure agents against git repositories, run them as branching decision trees, and inspect execution through a visual canvas with integrated terminals.
+crongen is a Tauri 2 desktop app for scheduling, orchestrating, and monitoring autonomous coding agents. Users configure agents against git repositories, run them as branching decision trees, and inspect execution through a visual canvas with integrated terminals.
 
 ## Stack
 
@@ -34,9 +34,9 @@ Agent-Chron is a Tauri 2 desktop app for scheduling, orchestrating, and monitori
   - `agent_templates.rs` and `models.rs` - agent configuration and domain types
 - Project docs:
   - `README.md` - product overview and workflows
-  - `agent-chron-spec-v2.md` - product and system spec
-  - `agent-chron-ui-design.md` - UI design spec
-  - `agentcron.pen` - design source
+  - `crongen-spec-v2.md` - product and system spec
+  - `crongen-ui-design.md` - UI design spec
+  - `crongen.pen` - design source
 
 ## Commands
 
@@ -54,6 +54,6 @@ Agent-Chron is a Tauri 2 desktop app for scheduling, orchestrating, and monitori
 - Keep Rust IPC handlers returning `Result<T, String>`.
 - Frontend-to-backend communication should go through `@tauri-apps/api` `invoke()`.
 - Backend-to-frontend updates should use emitted events such as `session_started`, `session_ended`, `pty_output`, `sdk_output`, and orchestrator progress events.
-- Keep the dark theme, JetBrains Mono, and design tokens consistent with `src/index.css` and `agentcron.pen`.
+- Keep the dark theme, JetBrains Mono, and design tokens consistent with `src/index.css` and `crongen.pen`.
 - Preserve the git worktree model and branching terminology used by the app: task, decision, agent, merge, final.
 - Avoid committing generated artifacts or OS junk; the tracked lockfile is `bun.lock`.
