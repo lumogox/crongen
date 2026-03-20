@@ -1,0 +1,57 @@
+[package]
+name = "agent-chron"
+version = "1.0.0"
+description = "Autonomous Scheduled Agent Environment"
+authors = ["Agent-Chron"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.4", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2.10.0", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+# IDs
+uuid = { version = "1", features = ["v4"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Error handling
+anyhow = "1"
+
+# Logging
+log = "0.4"
+
+# Git operations
+git2 = "0.19"
+
+# PTY
+portable-pty = "0.8"
+base64 = "0.22"
+
+# Unix signals (pause/resume)
+libc = "0.2"
+
+# TOON format (token-efficient context for agents)
+toon-format = "0.4"
+
+# Utilities
+which = "7"
+dirs = "6"
