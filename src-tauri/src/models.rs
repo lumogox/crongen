@@ -349,6 +349,15 @@ impl Default for AppSettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeRuntimeValidation {
+    pub node: DecisionNode,
+    pub session_active: bool,
+    pub session_backend: Option<String>,
+    pub reconciled: bool,
+    pub message: String,
+}
+
 /// Completion event emitted by PTY/SDK managers when a session finishes.
 #[derive(Debug, Clone)]
 pub struct SessionCompletion {

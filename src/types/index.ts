@@ -89,6 +89,14 @@ export interface DecisionNode {
   updated_at: number;
 }
 
+export interface NodeRuntimeValidation {
+  node: DecisionNode;
+  session_active: boolean;
+  session_backend?: string | null;
+  reconciled: boolean;
+  message: string;
+}
+
 // ─── Git Operations ───────────────────────────────────────────
 
 export interface MergeResult {

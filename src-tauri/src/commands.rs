@@ -13,7 +13,8 @@ use crate::db;
 use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
-    DecisionNode, ExecutionMode, NodeStatus, OrchestratorMode, OrchestratorStatus, Project,
+    DecisionNode, ExecutionMode, NodeRuntimeValidation, NodeStatus, OrchestratorMode,
+    OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;

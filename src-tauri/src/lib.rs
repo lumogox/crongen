@@ -98,6 +98,7 @@ pub fn run() {
             // Settings
             commands::get_settings,
             commands::update_settings,
+            commands::validate_node_runtime,
             commands::reset_node_status,
             // Git branch operations
             commands::get_repo_branch,

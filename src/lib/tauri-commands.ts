@@ -5,6 +5,7 @@ import type {
   AppSettings,
   DecisionNode,
   MergeResult,
+  NodeRuntimeValidation,
   OrchestratorStatus,
   Project,
 } from "../types";
@@ -237,6 +238,12 @@ export async function updateSettings(settings: AppSettings): Promise<void> {
 
 export async function resetNodeStatus(nodeId: string): Promise<DecisionNode> {
   return invoke("reset_node_status", { nodeId });
+}
+
+export async function validateNodeRuntime(
+  nodeId: string,
+): Promise<NodeRuntimeValidation> {
+  return invoke("validate_node_runtime", { nodeId });
 }
 
 // ─── Merge Preview ────────────────────────────────────────────
