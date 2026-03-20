@@ -49,6 +49,8 @@ interface ContentAreaProps {
   debugMode?: boolean;
   agentSetupReminder?: string | null;
   onOpenSettings?: () => void;
+  onValidateRuntime?: (nodeId: string) => void;
+  onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
 }
 
@@ -156,6 +158,8 @@ function ContentAreaInner({
   debugMode,
   agentSetupReminder,
   onOpenSettings,
+  onValidateRuntime,
+  onRetryNode,
   onResetNode,
 }: ContentAreaProps) {
   const selectedNode = selectedNodeId
@@ -501,6 +505,8 @@ function ContentAreaInner({
               treeNodes={treeNodes}
               orchestratorStatus={orchestratorStatus}
               onSelectNode={(id) => onSelectNode(id)}
+              onValidateRuntime={onValidateRuntime}
+              onResumeNode={onResumeNode}
             />
           ) : selectedNode && selectedProject ? (
             <InspectorPanel
@@ -516,6 +522,9 @@ function ContentAreaInner({
               onDelete={onDeleteNode}
               onRunNode={onRunNode}
               onUpdateNode={onUpdateNode}
+              onValidateRuntime={onValidateRuntime}
+              onRetryNode={onRetryNode}
+              onResetNode={onResetNode}
             />
           ) : debugMode && treeNodes.length > 0 ? (
             <ToonViewer nodes={treeNodes} />

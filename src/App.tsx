@@ -39,6 +39,7 @@ import {
   getSettings,
   updateSettings,
   resetNodeStatus,
+  validateNodeRuntime,
   getRepoBranch,
 } from "./lib/tauri-commands";
 import { getAgentLabel } from "./lib/agent-templates";
@@ -358,6 +359,15 @@ function App() {
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
+
+  const applyUpdatedNode = useCallback((updated: DecisionNode) => {
+    setTreeNodes((prev) =>
+      prev.map((node) => (node.id === updated.id ? updated : node)),
+    );
+    setSessions((prev) =>
+      prev.map((node) => (node.id === updated.id ? updated : node)),
+    );
+  }, []);
 
   const providerStatusByType = useMemo(
     () => new Map(agentProviderStatuses.map((status) => [status.agent_type, status])),
@@ -703,32 +713,24 @@ function App() {
       }
       try {
         const updated = await runNode(nodeId);
-        setTreeNodes((prev) =>
-          prev.map((n) => (n.id === updated.id ? updated : n)),
-        );
+        applyUpdatedNode(updated);
       } catch (e) {
         setError(String(e));
       }
     },
-    [guardAgentRole, selectedProject],
+    [applyUpdatedNode, guardAgentRole, selectedProject],
   );
 
   const handleUpdateNode = useCallback(
     async (nodeId: string, label: string, prompt: string) => {
       try {
         const updated = await updateNode(nodeId, label, prompt);
-        setTreeNodes((prev) =>
-          prev.map((n) => (n.id === updated.id ? updated : n)),
-        );
-        // Also update sessions list if it's a root node
-        setSessions((prev) =>
-          prev.map((n) => (n.id === updated.id ? updated : n)),
-        );
+        applyUpdatedNode(updated);
       } catch (e) {
         setError(String(e));
       }
     },
-    [],
+    [applyUpdatedNode],
   );
 
   // ─── Delete node handlers ──────────────────────────────────
@@ -895,16 +897,40 @@ function App() {
     }
   }, []);
 
-  const handleResetNode = useCallback(async (nodeId: string) => {
+  const handleValidateNodeRuntime = useCallback(async (nodeId: string) => {
     try {
-      const updated = await resetNodeStatus(nodeId);
-      setTreeNodes((prev) =>
-        prev.map((n) => (n.id === updated.id ? updated : n)),
-      );
+      const result = await validateNodeRuntime(nodeId);
+      applyUpdatedNode(result.node);
+      setSuccess(result.message);
     } catch (e) {
       setError(String(e));
     }
-  }, []);
+  }, [applyUpdatedNode]);
+
+  const handleResetNode = useCallback(async (nodeId: string) => {
+    try {
+      const updated = await resetNodeStatus(nodeId);
+      applyUpdatedNode(updated);
+      setSuccess("Node reset to pending with a clean worktree state.");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [applyUpdatedNode]);
+
+  const handleRetryNode = useCallback(async (nodeId: string) => {
+    if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
+      return;
+    }
+    try {
+      const reset = await resetNodeStatus(nodeId);
+      applyUpdatedNode(reset);
+      const restarted = await runNode(nodeId);
+      applyUpdatedNode(restarted);
+      setSuccess("Node restarted from a clean worktree.");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [applyUpdatedNode, guardAgentRole, selectedProject]);
 
   const handleMergeComplete = useCallback(async () => {
     if (selectedSessionId) {
@@ -969,6 +995,8 @@ function App() {
             debugMode={settings.debug_mode}
             agentSetupReminder={setupReminder}
             onOpenSettings={() => openAgentBay({ focusRole: getPrimaryMissingRole() })}
+            onValidateRuntime={handleValidateNodeRuntime}
+            onRetryNode={handleRetryNode}
             onResetNode={handleResetNode}
           />
         </div>

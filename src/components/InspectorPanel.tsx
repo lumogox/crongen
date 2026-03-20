@@ -4,6 +4,8 @@ import {
   GitMerge,
   Pause,
   Play,
+  RefreshCw,
+  RotateCcw,
   Trash2,
   ScrollText,
   Trophy,
@@ -31,6 +33,9 @@ interface InspectorPanelProps {
   onDelete?: (nodeId: string) => void;
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onValidateRuntime?: (nodeId: string) => void;
+  onRetryNode?: (nodeId: string) => void;
+  onResetNode?: (nodeId: string) => void;
 }
 
 const statusTones: Record<string, string> = {
@@ -64,6 +69,9 @@ export function InspectorPanel({
   onDelete,
   onRunNode,
   onUpdateNode,
+  onValidateRuntime,
+  onRetryNode,
+  onResetNode,
 }: InspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("Overview");
   const visualType: VisualNodeType = inferNodeType(node, allNodes);
@@ -185,6 +193,26 @@ export function InspectorPanel({
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {(node.status === "running" || node.status === "paused") && onValidateRuntime && (
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">
+                  Runtime recovery
+                </div>
+                <div className="mt-2 text-sm leading-6 text-amber-50/90">
+                  If this node looks stuck, validate whether the agent process is still alive. A stale
+                  running state will be marked failed so you can retry cleanly.
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => onValidateRuntime(node.id)}
+                  className="mt-3 rounded-2xl border-amber-300/20 bg-black/20 text-amber-50 hover:bg-black/30"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Validate session state
+                </Button>
               </div>
             )}
 
@@ -342,7 +370,7 @@ export function InspectorPanel({
                 </Button>
               )}
               {/* Run pending nodes */}
-              {(visualType === "task" || visualType === "agent") &&
+              {visualType !== "decision" &&
                 node.status === "pending" &&
                 !node.worktree_path &&
                 onRunNode && (
@@ -372,7 +400,36 @@ export function InspectorPanel({
                   className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
                 >
                   <Play className="mr-2 h-4 w-4" />
-                  Resume session
+                  Continue session
+                </Button>
+              )}
+              {(node.status === "running" || node.status === "paused") && onValidateRuntime && (
+                <Button
+                  variant="outline"
+                  onClick={() => onValidateRuntime(node.id)}
+                  className="justify-start rounded-2xl border-amber-400/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Validate session state
+                </Button>
+              )}
+              {(node.status === "failed" || node.status === "completed") && onRetryNode && (
+                <Button
+                  variant="outline"
+                  onClick={() => onRetryNode(node.id)}
+                  className="justify-start rounded-2xl border-emerald-400/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Retry from scratch
+                </Button>
+              )}
+              {(node.status === "failed" || node.status === "completed") && onResetNode && (
+                <Button
+                  variant="outline"
+                  onClick={() => onResetNode(node.id)}
+                  className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                >
+                  Reset to pending
                 </Button>
               )}
               {canDelete && (
