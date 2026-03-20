@@ -1322,6 +1322,9 @@ pub async fn run_node(
         exec_model2.as_deref(),
     );
 
+    state.pty.clear_session_artifacts(&node.id);
+    state.sdk.clear_session_artifacts(&node.id);
+
     match execution {
         ExecutionMode::Pty(shell) => {
             state

@@ -709,6 +709,9 @@ async fn run_single_node(
         exec_model.as_deref(),
     );
 
+    pty.clear_session_artifacts(&nid);
+    sdk.clear_session_artifacts(&nid);
+
     // Spawn the process
     match execution {
         ExecutionMode::Pty(shell) => {
