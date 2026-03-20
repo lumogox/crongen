@@ -497,6 +497,7 @@ function ContentAreaInner({
         <aside style={{ width: inspector.size, minWidth: inspector.size }} className="shrink-0 min-h-0 overflow-hidden">
           {showOrchestratorActivity && selectedProject ? (
             <OrchestratorActivity
+              agentType={selectedProject.agent_type}
               treeNodes={treeNodes}
               orchestratorStatus={orchestratorStatus}
               onSelectNode={(id) => onSelectNode(id)}

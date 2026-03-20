@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Circle, CheckCircle2, XCircle, Loader2, Pause, Clock } from "lucide-react";
-import type { DecisionNode, OrchestratorStatus } from "../types";
+import type { AgentType, DecisionNode, OrchestratorStatus } from "../types";
 import { SdkSessionView } from "./SdkSessionView";
+import { TerminalView } from "./TerminalView";
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -23,6 +24,7 @@ function useLiveClock(hasRunning: boolean): number {
 }
 
 interface OrchestratorActivityProps {
+  agentType: AgentType;
   treeNodes: DecisionNode[];
   orchestratorStatus: OrchestratorStatus;
   onSelectNode: (id: string) => void;
@@ -47,6 +49,7 @@ const statusColor: Record<string, string> = {
 };
 
 export function OrchestratorActivity({
+  agentType,
   treeNodes,
   orchestratorStatus,
   onSelectNode,
@@ -175,7 +178,11 @@ export function OrchestratorActivity({
               </span>
             </div>
             <div className="flex-1 min-h-0">
-              <SdkSessionView sessionId={viewingNode.id} status={viewingNode.status} />
+              {agentType === "claude_code" ? (
+                <SdkSessionView sessionId={viewingNode.id} status={viewingNode.status} />
+              ) : (
+                <TerminalView sessionId={viewingNode.id} status={viewingNode.status} />
+              )}
             </div>
           </div>
         ) : (
