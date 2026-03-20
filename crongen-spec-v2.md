@@ -1,4 +1,4 @@
-# Agent-Chron: Autonomous Scheduled Agent Environment
+# crongen: Autonomous Scheduled Agent Environment
 **Version:** 1.0.0 (Revised)  
 **Status:** Draft  
 **Target Platforms:** Windows, macOS, Linux  
@@ -27,7 +27,7 @@
 
 ## 1. Overview
 
-Agent-Chron is a cross-platform desktop application for defining, scheduling, and monitoring autonomous agent tasks. Users place agents on a visual canvas, where each agent is bound to a git repository and produces a decision tree as it runs. At any point the user can fork a running or completed agent session — creating a new git worktree and branching the tree — to explore alternative approaches in parallel.
+crongen is a cross-platform desktop application for defining, scheduling, and monitoring autonomous agent tasks. Users place agents on a visual canvas, where each agent is bound to a git repository and produces a decision tree as it runs. At any point the user can fork a running or completed agent session — creating a new git worktree and branching the tree — to explore alternative approaches in parallel.
 
 The primary use case is automating LLM CLI agent workflows (e.g., running `claude`, `aider`, or custom scripts) on a schedule, with full visual control over branching, comparison, and merging of agent-driven code changes.
 
@@ -397,7 +397,7 @@ impl GitManager {
         // 2. Resolve from_commit (or HEAD).
         // 3. Create branch branch_name at that commit.
         // 4. Run git worktree add at a deterministic path:
-        //    {repo_path}/../.agent-chron-worktrees/{branch_name}
+        //    {repo_path}/../.crongen-worktrees/{branch_name}
         // 5. Return WorktreeInfo { worktree_path, commit_hash, branch_name }.
 
     pub fn remove_worktree(repo_path: &str, worktree_path: &str) -> Result<()>
@@ -432,7 +432,7 @@ pub struct MergeResult {
 **Worktree path convention:** Worktrees are stored in a sibling directory to the repo to keep the repo's own directory clean:
 ```
 ~/repos/myproject/                    ← The repo
-~/repos/.agent-chron-worktrees/       ← Worktree storage
+~/repos/.crongen-worktrees/       ← Worktree storage
     fix-approach-a/
     fix-approach-b/
     fix-approach-b-alt/
@@ -953,7 +953,7 @@ Off by default. Opt-in via settings. Start minimized when enabled.
 React Flow (`@xyflow/react`) for the canvas + dagre (`@dagrejs/dagre`) for tree layout. React Flow provides pan/zoom/select/custom nodes/keyboard navigation. Dagre computes top-down positions. Both MIT-licensed, lightweight, and broadly adopted. dagre can be swapped for elkjs later if variable-height nodes or animated re-layout require it.
 
 ### #8 — Git worktree strategy
-One repo per agent. Worktrees stored in a sibling directory (`../.agent-chron-worktrees/`). `git2-rs` for all git operations. Merge back into main when the user picks a winning branch. Conflict resolution happens interactively in the terminal panel.
+One repo per agent. Worktrees stored in a sibling directory (`../.crongen-worktrees/`). `git2-rs` for all git operations. Merge back into main when the user picks a winning branch. Conflict resolution happens interactively in the terminal panel.
 
 ---
 

@@ -592,7 +592,7 @@
                   "id": "Le0Ee",
                   "name": "titleText",
                   "fill": "$text-secondary",
-                  "content": "Agent-Chron",
+                  "content": "crongen",
                   "fontFamily": "JetBrains Mono",
                   "fontSize": 12,
                   "fontWeight": "600"
@@ -1327,7 +1327,7 @@
                   "id": "Vt9wi",
                   "name": "titleText",
                   "fill": "$text-secondary",
-                  "content": "Agent-Chron",
+                  "content": "crongen",
                   "fontFamily": "JetBrains Mono",
                   "fontSize": 12,
                   "fontWeight": "600"

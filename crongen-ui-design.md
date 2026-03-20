@@ -1,5 +1,5 @@
-# Agent-Chron — UI Design Specification
-**Companion to:** Agent-Chron Spec v1.0.0 (Revised)  
+# crongen — UI Design Specification
+**Companion to:** crongen Spec v1.0.0 (Revised)  
 **Paradigm:** Canvas-based decision tree with git worktree branching
 
 ---
@@ -8,7 +8,7 @@
 
 **The tree is the product.** The canvas showing the agent's decision tree is the primary artifact users interact with. Every design choice supports reading, navigating, and steering the tree.
 
-**Spatial over temporal.** Traditional terminal apps present agent output as a timeline (scrollback). Agent-Chron presents it as a *map* of explored paths. The user thinks in branches, not in history.
+**Spatial over temporal.** Traditional terminal apps present agent output as a timeline (scrollback). crongen presents it as a *map* of explored paths. The user thinks in branches, not in history.
 
 **Calm by default, loud on exceptions.** The interface is visually quiet during normal operation. Color and motion are reserved for state changes: a branch completing, a fork point ready, an error surfacing.
 
@@ -154,7 +154,7 @@ Font stack: `JetBrains Mono`, `SF Mono`, `Cascadia Code`, `monospace`.
 The sidebar lists all configured agents. Each agent maps to one git repo and one decision tree.
 
 **Header:**
-- App wordmark "Agent-Chron" in `text-secondary`, 11px, uppercase, letter-spaced.
+- App wordmark "crongen" in `text-secondary`, 11px, uppercase, letter-spaced.
 - "+ New Agent" button: full-width, `bg-elevated`, `accent` left border (3px).
 
 **Agent card:**
