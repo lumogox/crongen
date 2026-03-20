@@ -630,7 +630,7 @@ async fn run_single_node(
 
     // Create worktree
     let branch_name = format!(
-        "agent-chron/{}/{}",
+        "crongen/{}/{}",
         node.label
             .to_lowercase()
             .chars()

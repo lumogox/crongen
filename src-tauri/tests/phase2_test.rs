@@ -129,7 +129,7 @@ fn test_db_init_and_agent_crud() {
             Option::<String>::None,
             "Root Run",
             "Fix the tests",
-            "agentchron/test-001/root",
+            "crongen/test-001/root",
             "running",
             "task",
             "2026-03-15T09:00",

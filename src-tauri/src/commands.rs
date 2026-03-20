@@ -233,7 +233,7 @@ fn make_branch_name(agent_name: &str) -> String {
         .trim_matches('-')
         .to_string();
     let ts = db::now_unix();
-    format!("agent-chron/{slug}/{ts}")
+    format!("crongen/{slug}/{ts}")
 }
 
 #[tauri::command]
@@ -1248,7 +1248,7 @@ pub async fn cancel_orchestrator(
 
 fn settings_path() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Cannot resolve home directory".to_string())?;
-    Ok(home.join(".agentcron").join("settings.json"))
+    Ok(home.join(".crongen").join("settings.json"))
 }
 
 #[tauri::command]

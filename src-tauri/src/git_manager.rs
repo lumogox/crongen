@@ -55,24 +55,24 @@ pub fn ensure_git_repo(path: &str) -> Result<()> {
     if repo.head().is_err() {
         log::info!("Empty git repo at {path}, creating initial commit...");
 
-        // Add .agent-chron-worktrees to .gitignore so worktrees don't get tracked
+        // Add .crongen-worktrees to .gitignore so worktrees don't get tracked
         let gitignore_path = Path::new(path).join(".gitignore");
         let mut gitignore_content = String::new();
         if gitignore_path.exists() {
             gitignore_content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
         }
-        if !gitignore_content.contains(".agent-chron-worktrees") {
+        if !gitignore_content.contains(".crongen-worktrees") {
             if !gitignore_content.is_empty() && !gitignore_content.ends_with('\n') {
                 gitignore_content.push('\n');
             }
-            gitignore_content.push_str(".agent-chron-worktrees\n");
+            gitignore_content.push_str(".crongen-worktrees\n");
             std::fs::write(&gitignore_path, &gitignore_content)
                 .context("Failed to write .gitignore")?;
         }
 
         let sig = repo
             .signature()
-            .or_else(|_| git2::Signature::now("Agent-Chron", "agent-chron@local"))
+            .or_else(|_| git2::Signature::now("crongen", "crongen@local"))
             .context("Failed to create git signature")?;
 
         // Stage .gitignore and create initial commit
@@ -89,7 +89,7 @@ pub fn ensure_git_repo(path: &str) -> Result<()> {
             Some("HEAD"),
             &sig,
             &sig,
-            "Initial commit (Agent-Chron)",
+            "Initial commit (crongen)",
             &tree,
             &[],
         )
@@ -135,9 +135,9 @@ pub fn get_default_branch(repo_path: &str) -> Result<String> {
 // ─── Worktree Directory ──────────────────────────────────────
 
 /// Worktrees are stored inside the repo:
-///   {repo_path}/.agent-chron-worktrees/{branch_name}
+///   {repo_path}/.crongen-worktrees/{branch_name}
 fn worktrees_dir(repo_path: &str) -> PathBuf {
-    Path::new(repo_path).join(".agent-chron-worktrees")
+    Path::new(repo_path).join(".crongen-worktrees")
 }
 
 // ─── Worktree Create ─────────────────────────────────────────
@@ -145,7 +145,7 @@ fn worktrees_dir(repo_path: &str) -> PathBuf {
 /// Create a git worktree on a new branch, optionally from a specific commit.
 ///
 /// - `repo_path`: path to the main git repository
-/// - `branch_name`: name for the new branch (e.g. "agent-chron/nightly-tests/1709...")
+/// - `branch_name`: name for the new branch (e.g. "crongen/nightly-tests/1709...")
 /// - `from_commit`: optional commit SHA to branch from (defaults to HEAD)
 pub fn create_worktree(
     repo_path: &str,
@@ -327,7 +327,7 @@ pub fn auto_commit_worktree(worktree_path: &str) -> Result<bool> {
         .args([
             "commit",
             "-m",
-            "Auto-commit agent work (uncommitted changes captured by Agent-Chron)",
+            "Auto-commit agent work (uncommitted changes captured by crongen)",
         ])
         .output()
         .context("Failed to commit in worktree")?;
