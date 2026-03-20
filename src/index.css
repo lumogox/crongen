@@ -6,8 +6,8 @@
 @import "@fontsource/jetbrains-mono/600.css";
 
 /*
- * Agent-Chron Design Tokens
- * Sourced from agentcron.pen design system (40 variables)
+ * crongen Design Tokens
+ * Sourced from crongen.pen design system (40 variables)
  */
 @theme {
   /* ── Backgrounds ── */
@@ -63,7 +63,7 @@
   /* ── Font ── */
   --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", monospace;
 
-  /* ── shadcn/ui semantic colors (mapped to Agent-Chron tokens) ── */
+  /* ── shadcn/ui semantic colors (mapped to crongen tokens) ── */
   --color-background: var(--color-bg-base);
   --color-foreground: var(--color-text-primary);
   --color-card: var(--color-bg-surface);

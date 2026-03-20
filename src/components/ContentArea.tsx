@@ -241,7 +241,7 @@ function ContentAreaInner({
         <div className="flex items-center gap-3">
           <div>
             <div className="text-xs uppercase tracking-[0.22em] text-slate-500">
-              Agent-Chron
+              crongen
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-50">
               Execution graph

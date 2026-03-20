@@ -1,8 +1,8 @@
 [package]
-name = "agent-chron"
+name = "crongen"
 version = "1.0.0"
 description = "Autonomous Scheduled Agent Environment"
-authors = ["Agent-Chron"]
+authors = ["crongen"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.77.2"

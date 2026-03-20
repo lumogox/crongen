@@ -158,7 +158,7 @@ export function DecisionCanvas({
       }}
       onDrop={(e) => {
         e.preventDefault();
-        const type = e.dataTransfer.getData("application/agentcron-node");
+        const type = e.dataTransfer.getData("application/crongen-node");
         if (!type) return;
         const parentId = selectedNodeId;
         if (type === "task" && treeNodes.length > 0) return;

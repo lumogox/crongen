@@ -34,7 +34,7 @@ export function NodePalette({ flowMode }: NodePaletteProps) {
             draggable
             onDragStart={(e) => {
               setDragType(item.type);
-              e.dataTransfer.setData("application/agentcron-node", item.type);
+              e.dataTransfer.setData("application/crongen-node", item.type);
               e.dataTransfer.effectAllowed = "move";
             }}
             onDragEnd={() => setDragType(null)}
