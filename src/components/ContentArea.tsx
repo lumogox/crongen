@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Sparkles, GitFork, GitMerge, Play, PlayCircle, XCircle, Loader2, Settings, FileCode, CheckCircle2, Rocket } from "lucide-react";
-import type { Agent, DecisionNode, OrchestratorMode, OrchestratorStatus } from "../types";
+import type { DecisionNode, OrchestratorMode, OrchestratorStatus, Project } from "../types";
 import { DecisionCanvas } from "./DecisionCanvas";
 import { InspectorPanel } from "./InspectorPanel";
 import { OrchestratorActivity } from "./OrchestratorActivity";
@@ -14,13 +14,13 @@ import { MergeDialog } from "./MergeDialog";
 import { getNodeContext } from "../lib/tauri-commands";
 
 interface ContentAreaProps {
-  agents: Agent[];
-  selectedAgentId: string | null;
-  onSelectAgent: (id: string) => void;
-  onNewAgent: () => void;
-  onEditAgent: (agent: Agent) => void;
-  onDeleteAgent: (agent: Agent) => void;
-  selectedAgent: Agent | null;
+  projects: Project[];
+  selectedProjectId: string | null;
+  onSelectProject: (id: string) => void;
+  onNewProject: () => void;
+  onEditProject: (project: Project) => void;
+  onDeleteProject: (project: Project) => void;
+  selectedProject: Project | null;
   treeNodes: DecisionNode[];
   treeLoading: boolean;
   selectedNodeId: string | null;
@@ -28,7 +28,7 @@ interface ContentAreaProps {
   onForkNode: (nodeId: string) => void;
   onMergeNode: (nodeId: string) => void;
   onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
-  onRunNow: (agentId: string) => void;
+  onRunNow: (projectId: string) => void;
   onCloseTerminal: () => void;
   onPauseNode?: (nodeId: string) => void;
   onResumeNode?: (nodeId: string) => void;
@@ -121,13 +121,13 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
 // ─── Main layout ──────────────────────────────────────────────
 
 function ContentAreaInner({
-  agents,
-  selectedAgentId,
-  onSelectAgent,
-  onNewAgent,
-  onEditAgent,
-  onDeleteAgent,
-  selectedAgent,
+  projects,
+  selectedProjectId,
+  onSelectProject,
+  onNewProject,
+  onEditProject,
+  onDeleteProject,
+  selectedProject,
   treeNodes,
   selectedNodeId,
   onSelectNode,
@@ -276,7 +276,7 @@ function ContentAreaInner({
 
           <Button
             variant="outline"
-            disabled={!selectedAgent}
+            disabled={!selectedProject}
             onClick={onCreateSession}
             className="rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-30"
           >
@@ -284,7 +284,7 @@ function ContentAreaInner({
             New task
           </Button>
           {/* Orchestrator: Run All / Progress / Cancel */}
-          {selectedAgent && selectedSessionId && onStartOrchestrator && (
+          {selectedProject && selectedSessionId && onStartOrchestrator && (
             showOrchestratorActivity ? (
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-2 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-200">
@@ -413,12 +413,12 @@ function ContentAreaInner({
         {/* Sidebar */}
         <div style={{ width: sidebar.size, minWidth: sidebar.size }} className="shrink-0">
           <Sidebar
-            agents={agents}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={onSelectAgent}
-            onNewAgent={onNewAgent}
-            onEditAgent={onEditAgent}
-            onDeleteAgent={onDeleteAgent}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            onSelectProject={onSelectProject}
+            onNewProject={onNewProject}
+            onEditProject={onEditProject}
+            onDeleteProject={onDeleteProject}
             onRunNow={onRunNow}
             sessions={sessions}
             selectedSessionId={selectedSessionId}
@@ -431,11 +431,11 @@ function ContentAreaInner({
 
         {/* Canvas column */}
         <main className="flex min-w-0 flex-1 min-h-0 flex-col overflow-hidden gap-4">
-          {selectedAgent ? (
+          {selectedProject ? (
             <>
               <CanvasToolbar
-                title={selectedAgent.name}
-                subtitle={selectedAgent.repo_path}
+                title={selectedProject.name}
+                subtitle={selectedProject.repo_path}
               />
               <NodePalette flowMode={flowMode} />
               <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-white/10" style={{ backgroundColor: "#050b16" }}>
@@ -447,8 +447,6 @@ function ContentAreaInner({
                   onForkNode={onForkNode}
                   onMergeNode={onMergeNode}
                   onCreateStructuralNode={onCreateStructuralNode}
-                  onRunNow={onRunNow}
-                  agentId={selectedAgent.id}
                   flowMode={flowMode}
                   onRunNode={onRunNode}
                   onUpdateNode={onUpdateNode}
@@ -478,16 +476,16 @@ function ContentAreaInner({
 
         {/* Inspector / Activity panel */}
         <aside style={{ width: inspector.size, minWidth: inspector.size }} className="shrink-0 min-h-0 overflow-hidden">
-          {showOrchestratorActivity && selectedAgent ? (
+          {showOrchestratorActivity && selectedProject ? (
             <OrchestratorActivity
               treeNodes={treeNodes}
               orchestratorStatus={orchestratorStatus}
               onSelectNode={(id) => onSelectNode(id)}
             />
-          ) : selectedNode && selectedAgent ? (
+          ) : selectedNode && selectedProject ? (
             <InspectorPanel
               node={selectedNode}
-              agent={selectedAgent}
+              project={selectedProject}
               allNodes={treeNodes}
               onClose={onCloseTerminal}
               onFork={onForkNode}

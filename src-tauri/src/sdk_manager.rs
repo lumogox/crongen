@@ -16,7 +16,7 @@ use tokio::sync::broadcast;
 pub struct SdkSessionStartedPayload {
     pub session_id: String,
     pub node_id: String,
-    pub agent_id: String,
+    pub project_id: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -30,7 +30,7 @@ pub struct SdkSessionEndedPayload {
 
 struct ActiveSession {
     process_id: u32,
-    agent_id: String,
+    project_id: String,
     #[allow(dead_code)]
     node_id: String,
 }
@@ -70,7 +70,7 @@ impl SdkManager {
     pub fn spawn_session(
         &self,
         session_id: &str,
-        agent_id: &str,
+        project_id: &str,
         node_id: &str,
         program: &str,
         args: &[String],
@@ -108,7 +108,7 @@ impl SdkManager {
                 session_id.to_string(),
                 ActiveSession {
                     process_id: pid,
-                    agent_id: agent_id.to_string(),
+                    project_id: project_id.to_string(),
                     node_id: node_id.to_string(),
                 },
             );
@@ -125,7 +125,7 @@ impl SdkManager {
             SdkSessionStartedPayload {
                 session_id: session_id.to_string(),
                 node_id: node_id.to_string(),
-                agent_id: agent_id.to_string(),
+                project_id: project_id.to_string(),
             },
         );
 
@@ -327,9 +327,9 @@ impl SdkManager {
             .map(|s| s.lines().map(|l| l.to_string()).collect())
     }
 
-    /// Check if an agent has any active SDK sessions.
-    pub fn has_active_for_agent(&self, agent_id: &str) -> bool {
+    /// Check if a project has any active SDK sessions.
+    pub fn has_active_for_project(&self, project_id: &str) -> bool {
         let sessions = self.sessions.lock().unwrap();
-        sessions.values().any(|s| s.agent_id == agent_id)
+        sessions.values().any(|s| s.project_id == project_id)
     }
 }

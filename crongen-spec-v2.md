@@ -1,4 +1,4 @@
-# crongen: Autonomous Scheduled Agent Environment
+# crongen: Autonomous Scheduled Project Environment
 **Version:** 1.0.0 (Revised)  
 **Status:** Draft  
 **Target Platforms:** Windows, macOS, Linux  
@@ -27,7 +27,7 @@
 
 ## 1. Overview
 
-crongen is a cross-platform desktop application for defining, scheduling, and monitoring autonomous agent tasks. Users place agents on a visual canvas, where each agent is bound to a git repository and produces a decision tree as it runs. At any point the user can fork a running or completed agent session — creating a new git worktree and branching the tree — to explore alternative approaches in parallel.
+crongen is a cross-platform desktop application for defining, scheduling, and monitoring repository-bound coding projects. Users create projects that point at git repositories, and each project owns a decision tree that runs executable agent nodes inside isolated worktrees. At any point the user can fork a running or completed session — creating a new git worktree and branching the tree — to explore alternative approaches in parallel.
 
 The primary use case is automating LLM CLI agent workflows (e.g., running `claude`, `aider`, or custom scripts) on a schedule, with full visual control over branching, comparison, and merging of agent-driven code changes.
 
@@ -36,22 +36,22 @@ The primary use case is automating LLM CLI agent workflows (e.g., running `claud
 ## 2. Goals & Non-Goals
 
 ### Goals
-- Define agents with a name, shell target, initial prompt, cron expression, timezone, and git repository path.
-- Visualize each agent's execution history as an interactive decision tree on a pannable, zoomable canvas.
+- Define projects with a name, shell target, initial prompt, cron expression, timezone, and git repository path.
+- Visualize each project's execution history as an interactive decision tree on a pannable, zoomable canvas.
 - Support branching (forking) from any paused or completed node, backed by `git worktree` for filesystem isolation.
 - Support merging a chosen branch back into the repository's main branch.
 - Provide a split-view terminal panel (xterm.js) for observing or interacting with any active session by selecting its tree node.
-- Reliably trigger agent execution via `tokio-cron-scheduler` on all three target platforms.
-- Persist agent and decision tree configuration in a local SQLite database.
-- Allow immediate, on-demand agent execution outside of the cron schedule.
-- Survive app restarts: re-register all active scheduled agents on startup.
+- Reliably trigger project execution via `tokio-cron-scheduler` on all three target platforms.
+- Persist project and decision tree configuration in a local SQLite database.
+- Allow immediate, on-demand project execution outside of the cron schedule.
+- Survive app restarts: re-register all active scheduled projects on startup.
 - Gracefully shut down all PTY sessions on app exit.
 
 ### Non-Goals (v1.0.0)
 - Remote/networked task execution.
 - Session output persistence / searchable history (post-session logs).
 - Multi-user or authentication support.
-- Agent dependencies or chaining.
+- Project dependencies or chaining.
 - Built-in LLM API integration (the PTY shell handles this externally).
 
 ---
@@ -96,7 +96,7 @@ The primary use case is automating LLM CLI agent workflows (e.g., running `claud
 │  │                        │   │                           │  │
 │  │  ┌──────────────────┐  │   │  ┌─────────────────────┐  │  │
 │  │  │ Sidebar          │  │   │  │  db.rs              │  │  │
-│  │  │ (Agent List)     │  │   │  │  (SQLite CRUD)      │  │  │
+│  │  │ (Project List)   │  │   │  │  (SQLite CRUD)      │  │  │
 │  │  └──────────────────┘  │   │  └─────────────────────┘  │  │
 │  │                        │   │                           │  │
 │  │  ┌──────────────────┐  │   │  ┌─────────────────────┐  │  │
@@ -110,7 +110,7 @@ The primary use case is automating LLM CLI agent workflows (e.g., running `claud
 │  │  └──────────────────┘  │   │  └─────────────────────┘  │  │
 │  │                        │   │                           │  │
 │  │  ┌──────────────────┐  │   │  ┌─────────────────────┐  │  │
-│  │  │ AgentModal       │  │   │  │  git_manager.rs     │  │  │
+│  │  │ ProjectModal     │  │   │  │  git_manager.rs     │  │  │
 │  │  │ ForkModal        │  │   │  │  (worktree ops)     │  │  │
 │  │  └──────────────────┘  │   │  └─────────────────────┘  │  │
 │  │                        │   │                           │  │
@@ -124,16 +124,16 @@ The primary use case is automating LLM CLI agent workflows (e.g., running `claud
 ### 4.2 Execution Flow
 
 ```
-User defines agent (AgentModal)
+User defines project (ProjectModal)
         │
         ▼
-create_agent [IPC Command]
+create_project [IPC Command]
         │
-        ├──► db.rs: INSERT into agents
+        ├──► db.rs: INSERT into projects
         │
         └──► scheduler.rs: register job with tokio-cron-scheduler
                     │
-             [Cron fires / run_agent_now]
+             [Cron fires / run_project_now]
                     │
                     ├──► Check concurrency: is a session for this agent already running?
                     │       ├── YES → Log warning, skip execution
@@ -147,7 +147,7 @@ create_agent [IPC Command]
                     │
                     ├──► db.rs: INSERT root decision_node
                     │
-                    ├──► Emit: session_started { session_id, node_id, agent_id, agent_name }
+                    ├──► Emit: session_started { session_id, node_id, project_id, project_name }
                     │              │
                     │              ▼
                     │     React: add node to canvas, auto-select, open terminal panel
@@ -212,7 +212,7 @@ merge_branch [IPC Command]
 ### 5.1 SQLite Schema
 
 ```sql
-CREATE TABLE IF NOT EXISTS agents (
+CREATE TABLE IF NOT EXISTS projects (
     id          TEXT PRIMARY KEY,            -- UUID v4
     name        TEXT NOT NULL,
     prompt      TEXT NOT NULL,               -- Initial stdin injection (root node prompt)
@@ -225,11 +225,11 @@ CREATE TABLE IF NOT EXISTS agents (
     updated_at  INTEGER NOT NULL             -- Unix timestamp (seconds)
 );
 
-CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(is_active);
+CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(is_active);
 
 CREATE TABLE IF NOT EXISTS decision_nodes (
     id              TEXT PRIMARY KEY,        -- UUID v4
-    agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     parent_id       TEXT REFERENCES decision_nodes(id), -- NULL for root
     label           TEXT NOT NULL,
     prompt          TEXT NOT NULL,           -- The prompt/command injected for this branch
@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS decision_nodes (
     updated_at      INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_nodes_agent ON decision_nodes(agent_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_project ON decision_nodes(project_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_parent ON decision_nodes(parent_id);
 ```
 
@@ -253,7 +253,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent ON decision_nodes(parent_id);
 // src-tauri/src/models.rs
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Agent {
+pub struct Project {
     pub id: String,
     pub name: String,
     pub prompt: String,
@@ -269,7 +269,7 @@ pub struct Agent {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DecisionNode {
     pub id: String,
-    pub agent_id: String,
+    pub project_id: String,
     pub parent_id: Option<String>,
     pub label: String,
     pub prompt: String,
@@ -298,7 +298,7 @@ pub enum NodeStatus {
 ```typescript
 // src/types/index.ts
 
-export interface Agent {
+export interface Project {
   id: string;
   name: string;
   prompt: string;
@@ -321,7 +321,7 @@ export type NodeStatus =
 
 export interface DecisionNode {
   id: string;
-  agent_id: string;
+  project_id: string;
   parent_id: string | null;
   label: string;
   prompt: string;
@@ -349,23 +349,23 @@ export interface DecisionNodeData {
 
 ### 6.1 `db.rs` — Database Layer
 
-**Responsibilities:** SQLite initialization and all CRUD for `agents` and `decision_nodes`.
+**Responsibilities:** SQLite initialization and all CRUD for `projects` and `decision_nodes`.
 
 ```
 db_init(conn: &Connection) -> Result<()>
     Creates tables and indexes if they do not exist.
 
--- Agent CRUD --
-agent_create(conn: &Connection, agent: &Agent) -> Result<()>
-agent_get_all(conn: &Connection) -> Result<Vec<Agent>>
-agent_get_by_id(conn: &Connection, id: &str) -> Result<Agent>
-agent_update(conn: &Connection, agent: &Agent) -> Result<()>
-agent_delete(conn: &Connection, id: &str) -> Result<()>
+-- Project CRUD --
+project_create(conn: &Connection, project: &Project) -> Result<()>
+project_get_all(conn: &Connection) -> Result<Vec<Project>>
+project_get_by_id(conn: &Connection, id: &str) -> Result<Project>
+project_update(conn: &Connection, project: &Project) -> Result<()>
+project_delete(conn: &Connection, id: &str) -> Result<()>
 
 -- Decision Node CRUD --
 node_create(conn: &Connection, node: &DecisionNode) -> Result<()>
-node_get_tree(conn: &Connection, agent_id: &str) -> Result<Vec<DecisionNode>>
-    Returns all nodes for an agent as a flat list. The frontend builds the tree.
+node_get_tree(conn: &Connection, project_id: &str) -> Result<Vec<DecisionNode>>
+    Returns all nodes for a project as a flat list. The frontend builds the tree.
 node_get_by_id(conn: &Connection, id: &str) -> Result<DecisionNode>
 node_update_status(conn: &Connection, id: &str, status: NodeStatus, exit_code: Option<i32>) -> Result<()>
 node_update_commit(conn: &Connection, id: &str, commit_hash: &str) -> Result<()>
@@ -445,24 +445,24 @@ pub struct MergeResult {
 ```
 scheduler_init(db: Arc<Mutex<Connection>>, pty_mgr: Arc<PtyManager>)
     -> Result<JobScheduler>
-    Loads all agents where is_active = 1 and registers each.
+    Loads all projects where is_active = 1 and registers each.
 
-scheduler_add_agent(sched: &JobScheduler, agent: &Agent,
+scheduler_add_project(sched: &JobScheduler, project: &Project,
                     pty_mgr: Arc<PtyManager>) -> Result<Uuid>
-    Registers a single job. Stores the returned job UUID mapped to agent.id.
+    Registers a single job. Stores the returned job UUID mapped to project.id.
 
-scheduler_remove_agent(sched: &JobScheduler, job_uuid: Uuid) -> Result<()>
+scheduler_remove_project(sched: &JobScheduler, job_uuid: Uuid) -> Result<()>
 ```
 
-- Job UUIDs are maintained in a `HashMap<String, Uuid>` (agent_id → job_uuid) inside a `Mutex`.
+- Job UUIDs are maintained in a `HashMap<String, Uuid>` (`project_id` → `job_uuid`) inside a `Mutex`.
 - On trigger, the job closure: (1) checks concurrency, (2) creates a worktree via `git_manager`, (3) creates a root `DecisionNode`, (4) calls `pty_mgr.spawn_session(...)`.
 
 **Timezone handling:**
-- Each agent stores a `timezone` field (IANA identifier or `LOCAL`).
-- At evaluation time, "now" is converted to the agent's timezone before matching against the cron expression.
+- Each project stores a `timezone` field (IANA identifier or `LOCAL`).
+- At evaluation time, "now" is converted to the project's timezone before matching against the cron expression.
 - **DST edge cases:** Spring forward → skip. Fall back → run once (first occurrence).
 
-**Concurrency policy (skip-if-running):** Before spawning, check `pty_manager.has_active_session_for_agent(agent_id)`. If active, skip and log a warning.
+**Concurrency policy (skip-if-running):** Before spawning, check `pty_manager.has_active_session_for_project(project_id)`. If active, skip and log a warning.
 
 ### 6.4 `pty_manager.rs` — PTY Lifecycle
 
@@ -475,7 +475,7 @@ pub struct PtyManager {
 }
 
 struct ActiveSession {
-    agent_id: String,
+    project_id: String,
     node_id: String,
     master: Box<dyn MasterPty + Send>,  // Keeps PTY alive; used for resize
     writer: Box<dyn Write + Send>,
@@ -488,7 +488,7 @@ struct ActiveSession {
 **Public API:**
 ```
 PtyManager::spawn_session(
-    agent: &Agent,
+    project: &Project,
     node: &DecisionNode,
     worktree_path: &str,
     app: AppHandle,
@@ -497,7 +497,7 @@ PtyManager::spawn_session(
     2. Generate session_id (UUID v4).
     3. Spawn PTY pair via portable-pty with the target shell.
        Set working directory to worktree_path.
-    4. Emit `session_started` event with { session_id, node_id, agent_id, agent_name }.
+    4. Emit `session_started` event with { session_id, node_id, project_id, project_name }.
     5. Spawn a reader thread via `tokio::task::spawn_blocking`
        (see "Output pipeline" below).
     6. Write node.prompt + "\n" to PTY stdin.
@@ -515,7 +515,7 @@ PtyManager::pause(session_id: &str) -> Result<()>
 PtyManager::resume(session_id: &str) -> Result<()>
     Sends SIGCONT (Unix) or resumes process (Windows).
 
-PtyManager::has_active_session_for_agent(agent_id: &str) -> bool
+PtyManager::has_active_session_for_project(project_id: &str) -> bool
 
 PtyManager::shutdown_all(&self) -> ()
     Iterates all sessions, sends SIGTERM/TerminateProcess, waits, then force-kills.
@@ -538,39 +538,39 @@ Runs in `spawn_blocking` because `portable-pty` provides synchronous `Read`.
 All commands are `#[tauri::command]` async functions.
 
 ```rust
-// --- Agent CRUD ---
+// --- Project CRUD ---
 
 #[tauri::command]
-async fn create_agent(
+async fn create_project(
     state: State<'_, AppState>,
     name: String, prompt: String, shell: String,
     repo_path: String, cron_expr: String, timezone: String,
-) -> Result<Agent, String>
+) -> Result<Project, String>
     // Validates cron_expr, shell, and repo_path (must be valid git repo).
 
 #[tauri::command]
-async fn update_agent(state: State<'_, AppState>, agent: Agent) -> Result<Agent, String>
+async fn update_project(state: State<'_, AppState>, project: Project) -> Result<Project, String>
     // Validates, updates DB, re-registers scheduler if cron/timezone/is_active changed.
 
 #[tauri::command]
-async fn get_agents(state: State<'_, AppState>) -> Result<Vec<Agent>, String>
+async fn get_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String>
 
 #[tauri::command]
-async fn delete_agent(state: State<'_, AppState>, id: String) -> Result<(), String>
+async fn delete_project(state: State<'_, AppState>, id: String) -> Result<(), String>
     // Removes from DB (cascades to decision_nodes) and scheduler.
     // Does NOT kill running sessions — they complete independently.
 
 #[tauri::command]
-async fn toggle_agent(state: State<'_, AppState>, id: String, is_active: bool) -> Result<(), String>
+async fn toggle_project(state: State<'_, AppState>, id: String, is_active: bool) -> Result<(), String>
 
 // --- Decision Tree ---
 
 #[tauri::command]
-async fn get_decision_tree(state: State<'_, AppState>, agent_id: String) -> Result<Vec<DecisionNode>, String>
-    // Returns flat list of all nodes for the agent. Frontend builds the tree.
+async fn get_decision_tree(state: State<'_, AppState>, project_id: String) -> Result<Vec<DecisionNode>, String>
+    // Returns flat list of all nodes for the project. Frontend builds the tree.
 
 #[tauri::command]
-async fn run_agent_now(
+async fn run_project_now(
     state: State<'_, AppState>, app: AppHandle, id: String,
 ) -> Result<String, String>  // Returns session_id
     // Creates worktree from HEAD, inserts root node, spawns PTY.
@@ -581,7 +581,7 @@ async fn fork_node(
     state: State<'_, AppState>, app: AppHandle,
     node_id: String, label: String, prompt: String, start_immediately: bool,
 ) -> Result<DecisionNode, String>
-    // 1. Look up parent node's commit_hash and agent's repo_path.
+    // 1. Look up parent node's commit_hash and project's repo_path.
     // 2. git_manager::create_worktree from that commit.
     // 3. Insert child DecisionNode in DB.
     // 4. If start_immediately: spawn PTY in new worktree.
@@ -618,9 +618,9 @@ async fn resume_session(state: State<'_, AppState>, session_id: String) -> Resul
     // SIGCONT the child. Update node status to 'running'.
 ```
 
-**Shell validation:** On `create_agent` and `update_agent`, resolve the shell path and return a descriptive error if not found.
+**Shell validation:** On `create_project` and `update_project`, resolve the shell path and return a descriptive error if not found.
 
-**Repo validation:** On `create_agent` and `update_agent`, call `GitManager::validate_repo` and return an error if the path is not a valid git repository.
+**Repo validation:** On `create_project` and `update_project`, call `GitManager::validate_repo` and return an error if the path is not a valid git repository.
 
 **`AppState` struct:**
 ```rust
@@ -628,7 +628,7 @@ pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
     pub scheduler: Arc<Mutex<JobScheduler>>,
     pub pty_manager: Arc<PtyManager>,
-    pub job_map: Arc<Mutex<HashMap<String, Uuid>>>,  // agent_id -> cron job_uuid
+    pub job_map: Arc<Mutex<HashMap<String, Uuid>>>,  // project_id -> cron job_uuid
 }
 ```
 
@@ -641,10 +641,10 @@ pub struct AppState {
 ```
 App
 ├── Sidebar
-│   ├── AgentListItem (×n)
-│   └── [+ New Agent] Button
+│   ├── ProjectListItem (×n)
+│   └── [+ New Project] Button
 ├── ContentArea
-│   ├── Toolbar (agent name, zoom, fork/merge actions)
+│   ├── Toolbar (project name, zoom, fork/merge actions)
 │   ├── DecisionCanvas (React Flow)
 │   │   ├── ReactFlow
 │   │   │   ├── DecisionNodeComponent (custom node, ×n)
@@ -657,7 +657,7 @@ App
 │       ├── TerminalHeader
 │       ├── TerminalView (xterm.js)
 │       └── NodeActions (fork, merge, pause/resume)
-├── AgentModal (conditional)
+├── ProjectModal (conditional)
 ├── ForkModal (conditional)
 ├── StatusBar
 └── ToastContainer
@@ -709,7 +709,7 @@ function useTreeLayout(tree: DecisionNode[]): { nodes: Node[], edges: Edge[] } {
 **Re-layout triggers:**
 - New node added (fork, initial run).
 - Node deleted (branch deletion).
-- Agent switch (sidebar selection).
+- Project switch (sidebar selection).
 - NOT on status change alone (node stays in place, only visual style updates).
 
 **`DecisionNodeComponent` (custom React Flow node):**
@@ -732,15 +732,15 @@ Bezier curve edge. Default color: `border-default`. When the edge is on the path
 ### 7.3 Component Contracts
 
 #### `App`
-- Fetches initial agent list via `get_agents` on mount.
-- Holds top-level state: `agents`, `selectedAgentId`, `tree` (for selected agent), `selectedNodeId`, `isTerminalOpen`, `modals`.
+- Fetches initial project list via `get_projects` on mount.
+- Holds top-level state: `projects`, `selectedProjectId`, `tree` (for the selected project), `selectedNodeId`, `isTerminalOpen`, `modals`.
 - Registers global Tauri event listeners on mount; unlistens on unmount.
-- When `selectedAgentId` changes, fetches that agent's tree via `get_decision_tree`.
+- When `selectedProjectId` changes, fetches that project's tree via `get_decision_tree`.
 
 #### `Sidebar`
-**Props:** `agents`, `selectedAgentId`, `onSelectAgent`, `onNewAgent`, `onEditAgent`, `onDeleteAgent`, `onRunNow`, `onToggle`
+**Props:** `projects`, `selectedProjectId`, `onSelectProject`, `onNewProject`, `onEditProject`, `onDeleteProject`, `onRunNow`, `onToggle`
 
-Each `AgentListItem` displays: name, repo path (truncated), shell badge, cron expression, timezone, branch count + running count, active toggle, overflow menu.
+Each `ProjectListItem` displays: name, repo path (truncated), shell badge, cron expression, timezone, branch count + running count, active toggle, overflow menu.
 
 #### `TerminalPanel`
 **Props:** `node: DecisionNode`, `onClose: () => void`
@@ -757,8 +757,8 @@ Each `AgentListItem` displays: name, repo path (truncated), shell badge, cron ex
 - On `terminal.onData`, invokes `write_pty`.
 - On fit/resize, invokes `resize_pty`.
 
-#### `AgentModal`
-**Props:** `agent: Agent | null` (null = create), `onClose`, `onSave`
+#### `ProjectModal`
+**Props:** `project: Project | null` (null = create), `onClose`, `onSave`
 
 Fields: Name, Repository Path (with folder picker + validation), Shell (select), Initial Prompt (textarea), Cron Expression (with validation + human-readable preview), Timezone (searchable select, defaults to LOCAL).
 
@@ -772,9 +772,9 @@ Fields: Branch Name (auto-generated, editable), New Prompt (textarea, required),
 ```typescript
 // On mount in App
 const unlistenStarted = await listen<SessionStartedPayload>('session_started', (event) => {
-  const { session_id, node_id, agent_id, agent_name } = event.payload;
+  const { session_id, node_id, project_id, project_name } = event.payload;
   // Update the node's status to 'running' in the tree state.
-  // If this agent is currently selected, the canvas re-renders the node.
+  // If this project is currently selected, the canvas re-renders the node.
   // Auto-select the new node → terminal panel opens.
 });
 
@@ -798,13 +798,13 @@ const unlistenMerged = await listen<BranchMergedPayload>('branch_merged', (event
 
 | Command | Parameters | Return | Description |
 |---|---|---|---|
-| `get_agents` | — | `Agent[]` | Fetch all agents |
-| `create_agent` | `name, prompt, shell, repo_path, cron_expr, timezone` | `Agent` | Validate, persist, schedule |
-| `update_agent` | `Agent` (full object) | `Agent` | Validate, update, re-register scheduler |
-| `delete_agent` | `id` | `void` | Remove from DB (cascade) + scheduler |
-| `toggle_agent` | `id, is_active` | `void` | Enable/disable scheduling |
-| `get_decision_tree` | `agent_id` | `DecisionNode[]` | Flat list of all nodes for agent |
-| `run_agent_now` | `id` | `session_id` | Create root node + worktree, spawn PTY |
+| `get_projects` | — | `Project[]` | Fetch all projects |
+| `create_project` | `name, prompt, shell, repo_path, cron_expr, timezone` | `Project` | Validate, persist, schedule |
+| `update_project` | `Project` (full object) | `Project` | Validate, update, re-register scheduler |
+| `delete_project` | `id` | `void` | Remove from DB (cascade) + scheduler |
+| `toggle_project` | `id, is_active` | `void` | Enable/disable scheduling |
+| `get_decision_tree` | `project_id` | `DecisionNode[]` | Flat list of all nodes for project |
+| `run_project_now` | `id` | `session_id` | Create root node + worktree, spawn PTY |
 | `fork_node` | `node_id, label, prompt, start_immediately` | `DecisionNode` | Create child worktree + node, optionally spawn |
 | `merge_branch` | `node_id` | `MergeResult` | Merge into main, cleanup worktree |
 | `delete_branch` | `node_id` | `void` | Remove worktree + node + descendants |
@@ -819,7 +819,7 @@ All commands return `Result<T, String>`.
 
 | Event | Payload | Description |
 |---|---|---|
-| `session_started` | `{ session_id, node_id, agent_id, agent_name }` | PTY ready; update node, open terminal |
+| `session_started` | `{ session_id, node_id, project_id, project_name }` | PTY ready; update node, open terminal |
 | `pty_output` | `{ session_id, data }` | Base64-encoded raw PTY output chunk |
 | `session_ended` | `{ session_id, node_id, exit_code }` | Process terminated; update node status |
 | `branch_merged` | `{ node_id, merge_commit_hash }` | Merge complete; update tree styling |
@@ -834,13 +834,13 @@ No external state library for v1.0.0. State lives in `App` via `useReducer`.
 
 ```typescript
 interface AppState {
-  agents: Agent[];
-  selectedAgentId: string | null;
-  tree: DecisionNode[];              // Flat list for the selected agent
+  projects: Project[];
+  selectedProjectId: string | null;
+  tree: DecisionNode[];              // Flat list for the selected project
   selectedNodeId: string | null;     // Currently selected node on canvas
   isTerminalOpen: boolean;
   modals: {
-    agent: { open: boolean; editing: Agent | null };
+    project: { open: boolean; editing: Project | null };
     fork: { open: boolean; parentNode: DecisionNode | null };
   };
 }
@@ -850,11 +850,11 @@ interface AppState {
 
 | Action | State Change |
 |---|---|
-| `get_agents` resolves | `agents = result` |
-| `create_agent` resolves | `agents = [...agents, new]`, close modal |
-| `update_agent` resolves | Replace agent in list, close modal |
-| `delete_agent` resolves | Remove agent from list, clear selection if deleted |
-| Select agent in sidebar | `selectedAgentId = id`, fetch tree |
+| `get_projects` resolves | `projects = result` |
+| `create_project` resolves | `projects = [...projects, new]`, close modal |
+| `update_project` resolves | Replace project in list, close modal |
+| `delete_project` resolves | Remove project from list, clear selection if deleted |
+| Select project in sidebar | `selectedProjectId = id`, fetch tree |
 | `get_decision_tree` resolves | `tree = result` |
 | `session_started` event | Update matching node in tree: `status = 'running'`, auto-select |
 | `session_ended` event | Update matching node: `status = completed/failed`, `exit_code` |
@@ -863,7 +863,7 @@ interface AppState {
 | `delete_branch` resolves | Remove node + descendants from tree (triggers re-layout) |
 | Click node on canvas | `selectedNodeId = id`, `isTerminalOpen = true` |
 | Click canvas background / Esc | `selectedNodeId = null`, `isTerminalOpen = false` |
-| Agent deleted while session active | No change to running sessions |
+| Project deleted while session active | No change to running sessions |
 
 ---
 
@@ -873,11 +873,11 @@ interface AppState {
 - All public functions return `Result<T, anyhow::Error>`.
 - `commands.rs` maps errors to `Result<T, String>` (`.map_err(|e| e.to_string())`).
 - PTY spawn failures: log error, emit synthetic `session_ended` with `exit_code: -1`.
-- Shell validation errors: descriptive message at agent creation/update time.
+- Shell validation errors: descriptive message at project creation/update time.
 - Repo validation errors: descriptive message ("Not a git repository" / "Path does not exist").
 - Git worktree failures: return error to frontend, do not leave partial state. If worktree was created but PTY fails to spawn, clean up the worktree.
 - Merge conflicts: return `MergeResult { success: false, conflict_files }`. The user resolves via the terminal panel (interactive PTY in the worktree).
-- Scheduler registration failures: log, don't crash. Agent remains in DB; user can retry.
+- Scheduler registration failures: log, don't crash. Project remains in DB; user can retry.
 - Concurrency violations: return descriptive error.
 
 ### Frontend
@@ -891,7 +891,7 @@ interface AppState {
 ## 11. Security Considerations
 
 - **Shell injection:** The `prompt` field is injected directly into PTY stdin. No sanitization — intentionally a power-user tool. Users execute arbitrary shell input.
-- **Shell validation:** Shell path is resolved at agent creation (UX guard, not security boundary).
+- **Shell validation:** Shell path is resolved at project creation (UX guard, not security boundary).
 - **Repo validation:** `repo_path` is validated as a git repository. The app does not restrict which repos can be used.
 - **Worktree isolation:** Each branch runs in its own worktree. Concurrent branches cannot corrupt each other's filesystem state.
 - **No network exposure:** Tauri local IPC only. No HTTP server.
@@ -906,7 +906,7 @@ interface AppState {
 ### App Startup
 1. Initialize SQLite connection and run `db_init`.
 2. Initialize `PtyManager` (empty sessions map).
-3. Initialize `JobScheduler` via `scheduler_init`: load all `is_active = 1` agents and register cron jobs.
+3. Initialize `JobScheduler` via `scheduler_init`: load all `is_active = 1` projects and register cron jobs.
 4. NOTE: Worktrees from previous sessions may still exist on disk. On startup, scan `decision_nodes` for nodes with `status = 'running'` or `'paused'` and set them to `'failed'` (the PTY process is gone). Worktrees are left on disk for user inspection; they can be cleaned up via `delete_branch`.
 
 ### App Shutdown
@@ -923,9 +923,9 @@ Register a handler on `tauri::RunEvent::ExitRequested`:
 3. Shut down the `JobScheduler`.
 4. Close the SQLite connection.
 
-### Agent Deletion While Session Active
+### Project Deletion While Session Active
 
-Deleting an agent cascades to all its `decision_nodes` in the DB. Running sessions from that agent continue to completion independently (the PTY is already spawned). Worktrees on disk are NOT automatically cleaned up on agent deletion — a cleanup command or manual removal is needed.
+Deleting a project cascades to all its `decision_nodes` in the DB. Running sessions from that project continue to completion independently (the PTY is already spawned). Worktrees on disk are NOT automatically cleaned up on project deletion — a cleanup command or manual removal is needed.
 
 ---
 
@@ -938,10 +938,10 @@ Adaptive batching in the Rust reader thread: 5ms debounce, 16KB max batch, flush
 Deferred to v1.1. Output pipeline designed for easy tee-to-file addition.
 
 ### #3 — Maximum concurrent PTY sessions
-Soft cap of 20 (warning), hard cap of 50 (blocked). Per-agent concurrency: skip-if-running.
+Soft cap of 20 (warning), hard cap of 50 (blocked). Per-project concurrency: skip-if-running.
 
 ### #4 — Separate commands for create/update
-Separate `create_agent` and `update_agent`. Separate `fork_node` for tree branching.
+Separate `create_project` and `update_project`. Separate `fork_node` for tree branching.
 
 ### #5 — Timezone handling
 Store `timezone` alongside `cron_expr`. Default to `LOCAL`. Skip on spring-forward, run once on fall-back.
@@ -953,7 +953,7 @@ Off by default. Opt-in via settings. Start minimized when enabled.
 React Flow (`@xyflow/react`) for the canvas + dagre (`@dagrejs/dagre`) for tree layout. React Flow provides pan/zoom/select/custom nodes/keyboard navigation. Dagre computes top-down positions. Both MIT-licensed, lightweight, and broadly adopted. dagre can be swapped for elkjs later if variable-height nodes or animated re-layout require it.
 
 ### #8 — Git worktree strategy
-One repo per agent. Worktrees stored in a sibling directory (`../.crongen-worktrees/`). `git2-rs` for all git operations. Merge back into main when the user picks a winning branch. Conflict resolution happens interactively in the terminal panel.
+One repo per project. Worktrees stored in a sibling directory (`../.crongen-worktrees/`). `git2-rs` for all git operations. Merge back into main when the user picks a winning branch. Conflict resolution happens interactively in the terminal panel.
 
 ---
 

@@ -8,8 +8,8 @@ use crate::context;
 use crate::db;
 use crate::git_manager;
 use crate::models::{
-    Agent, AgentType, AgentTypeConfig, AppSettings, DecisionNode, ExecutionMode, NodeStatus,
-    OrchestratorMode, OrchestratorStatus,
+    AgentType, AgentTypeConfig, AppSettings, DecisionNode, ExecutionMode, NodeStatus,
+    OrchestratorMode, OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -24,10 +24,10 @@ pub struct AppState {
     pub orchestrator: Arc<OrchestratorManager>,
 }
 
-// ─── Agent CRUD ────────────────────────────────────────────────
+// ─── Project CRUD ──────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn create_agent(
+pub async fn create_project(
     state: State<'_, AppState>,
     name: String,
     prompt: String,
@@ -35,7 +35,7 @@ pub async fn create_agent(
     agent_type: String,
     type_config: serde_json::Value,
     project_mode: Option<String>,
-) -> Result<Agent, String> {
+) -> Result<Project, String> {
     // Parse agent type
     let at = AgentType::from_str(&agent_type)?;
 
@@ -52,7 +52,7 @@ pub async fn create_agent(
     }
 
     let now = db::now_unix();
-    let agent = Agent {
+    let project = Project {
         id: uuid::Uuid::new_v4().to_string(),
         name,
         prompt,
@@ -67,42 +67,42 @@ pub async fn create_agent(
     };
 
     let db = state.db.clone();
-    let agent_clone = agent.clone();
+    let project_clone = project.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_create(&conn, &agent_clone).map_err(|e| format!("DB error: {e}"))
+        db::project_create(&conn, &project_clone).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    log::info!("Created agent: {} ({})", agent.name, agent.id);
-    Ok(agent)
+    log::info!("Created project: {} ({})", project.name, project.id);
+    Ok(project)
 }
 
 #[tauri::command]
-pub async fn get_agents(state: State<'_, AppState>) -> Result<Vec<Agent>, String> {
+pub async fn get_projects(state: State<'_, AppState>) -> Result<Vec<Project>, String> {
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_all(&conn).map_err(|e| format!("DB error: {e}"))
+        db::project_get_all(&conn).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
 }
 
 #[tauri::command]
-pub async fn get_agent(state: State<'_, AppState>, id: String) -> Result<Agent, String> {
+pub async fn get_project(state: State<'_, AppState>, id: String) -> Result<Project, String> {
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &id).map_err(|e| format!("DB error: {e}"))
+        db::project_get_by_id(&conn, &id).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
 }
 
 #[tauri::command]
-pub async fn update_agent(
+pub async fn update_project(
     state: State<'_, AppState>,
     id: String,
     name: String,
@@ -112,7 +112,7 @@ pub async fn update_agent(
     type_config: serde_json::Value,
     is_active: bool,
     project_mode: Option<String>,
-) -> Result<Agent, String> {
+) -> Result<Project, String> {
     let at = AgentType::from_str(&agent_type)?;
     let tc: AgentTypeConfig =
         serde_json::from_value(type_config).map_err(|e| format!("Invalid type_config: {e}"))?;
@@ -125,17 +125,17 @@ pub async fn update_agent(
     let db = state.db.clone();
     let now = db::now_unix();
 
-    // Fetch existing agent to preserve created_at + project_mode
+    // Fetch existing project to preserve created_at + project_mode
     let db_clone = db.clone();
     let id_clone = id.clone();
     let existing = tokio::task::spawn_blocking(move || {
         let conn = db_clone.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &id_clone).map_err(|e| format!("DB error: {e}"))
+        db::project_get_by_id(&conn, &id_clone).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    let agent = Agent {
+    let project = Project {
         id,
         name,
         prompt,
@@ -150,59 +150,59 @@ pub async fn update_agent(
     };
 
     let db_clone = db.clone();
-    let agent_clone = agent.clone();
+    let project_clone = project.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db_clone.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_update(&conn, &agent_clone).map_err(|e| format!("DB error: {e}"))
+        db::project_update(&conn, &project_clone).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    log::info!("Updated agent: {} ({})", agent.name, agent.id);
-    Ok(agent)
+    log::info!("Updated project: {} ({})", project.name, project.id);
+    Ok(project)
 }
 
 #[tauri::command]
-pub async fn delete_agent(state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn delete_project(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_delete(&conn, &id).map_err(|e| format!("DB error: {e}"))
+        db::project_delete(&conn, &id).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
 }
 
 #[tauri::command]
-pub async fn toggle_agent(
+pub async fn toggle_project(
     state: State<'_, AppState>,
     id: String,
     is_active: bool,
-) -> Result<Agent, String> {
+) -> Result<Project, String> {
     let db = state.db.clone();
     let db_clone = db.clone();
     let id_clone = id.clone();
 
-    let mut agent = tokio::task::spawn_blocking(move || {
+    let mut project = tokio::task::spawn_blocking(move || {
         let conn = db_clone.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &id_clone).map_err(|e| format!("DB error: {e}"))
+        db::project_get_by_id(&conn, &id_clone).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    agent.is_active = is_active;
-    agent.updated_at = db::now_unix();
+    project.is_active = is_active;
+    project.updated_at = db::now_unix();
 
-    let agent_clone = agent.clone();
+    let project_clone = project.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_update(&conn, &agent_clone).map_err(|e| format!("DB error: {e}"))
+        db::project_update(&conn, &project_clone).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    log::info!("Toggled agent {} to is_active={}", agent.name, is_active);
-    Ok(agent)
+    log::info!("Toggled project {} to is_active={}", project.name, is_active);
+    Ok(project)
 }
 
 // ─── Decision Tree (stubs for Phase 4+) ───────────────────────
@@ -210,12 +210,12 @@ pub async fn toggle_agent(
 #[tauri::command]
 pub async fn get_decision_tree(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
 ) -> Result<Vec<DecisionNode>, String> {
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_get_tree(&conn, &agent_id).map_err(|e| format!("DB error: {e}"))
+        db::node_get_tree(&conn, &project_id).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
@@ -223,9 +223,9 @@ pub async fn get_decision_tree(
 
 // ─── Git + Node Operations ────────────────────────────────────
 
-/// Generate a slugified branch name from agent name + timestamp.
-fn make_branch_name(agent_name: &str) -> String {
-    let slug: String = agent_name
+/// Generate a slugified branch name from project or node name + timestamp.
+fn make_branch_name(name: &str) -> String {
+    let slug: String = name
         .to_lowercase()
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
@@ -237,7 +237,7 @@ fn make_branch_name(agent_name: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn run_agent_now(
+pub async fn run_project_now(
     state: State<'_, AppState>,
     app: AppHandle,
     id: String,
@@ -245,33 +245,33 @@ pub async fn run_agent_now(
     let db = state.db.clone();
     let db2 = db.clone();
 
-    // 1. Fetch the agent
-    let agent = tokio::task::spawn_blocking(move || {
+    // 1. Fetch the project
+    let project = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &id).map_err(|e| format!("{e}"))
+        db::project_get_by_id(&conn, &id).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 2. Check no active sessions (DB check + PTY check)
-    let agent_id = agent.id.clone();
+    let project_id = project.id.clone();
     let db3 = db2.clone();
     let has_active_db = tokio::task::spawn_blocking(move || {
         let conn = db3.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_has_active_session(&conn, &agent_id).map_err(|e| format!("{e}"))
+        db::node_has_active_session(&conn, &project_id).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
     if has_active_db
-        || state.pty.has_active_for_agent(&agent.id)
-        || state.sdk.has_active_for_agent(&agent.id)
+        || state.pty.has_active_for_project(&project.id)
+        || state.sdk.has_active_for_project(&project.id)
     {
-        return Err("Agent already has a running or paused session".to_string());
+        return Err("Project already has a running or paused session".to_string());
     }
 
     // 3. Ensure the repo path is a git repo (auto-init if not)
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     tokio::task::spawn_blocking(move || {
         git_manager::ensure_git_repo(&repo_path).map_err(|e| format!("{e}"))
     })
@@ -279,8 +279,8 @@ pub async fn run_agent_now(
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 4. Create worktree
-    let branch_name = make_branch_name(&agent.name);
-    let repo_path = agent.repo_path.clone();
+    let branch_name = make_branch_name(&project.name);
+    let repo_path = project.repo_path.clone();
     let branch = branch_name.clone();
     let wt_info = tokio::task::spawn_blocking(move || {
         git_manager::create_worktree(&repo_path, &branch, None).map_err(|e| format!("{e}"))
@@ -300,10 +300,10 @@ pub async fn run_agent_now(
     let now = db::now_unix();
     let node = DecisionNode {
         id: uuid::Uuid::new_v4().to_string(),
-        agent_id: agent.id.clone(),
+        project_id: project.id.clone(),
         parent_id: None,
-        label: agent.name.clone(),
-        prompt: agent.prompt.clone(),
+        label: project.name.clone(),
+        prompt: project.prompt.clone(),
         branch_name,
         worktree_path: Some(wt_info.path.clone()),
         commit_hash: Some(commit_hash),
@@ -327,9 +327,9 @@ pub async fn run_agent_now(
     // 7. Build execution mode and spawn appropriate session (no context for root)
     let exec_model = get_settings().await.ok().and_then(|s| s.execution_model);
     let execution = agent_templates::build_shell_command(
-        &agent.agent_type,
-        &agent.prompt,
-        &agent.type_config,
+        &project.agent_type,
+        &project.prompt,
+        &project.type_config,
         None,
         node.node_type.as_deref(),
         exec_model.as_deref(),
@@ -341,7 +341,7 @@ pub async fn run_agent_now(
                 .pty
                 .spawn_session(
                     &node.id,
-                    &agent.id,
+                    &project.id,
                     &node.id,
                     &shell.program,
                     &shell.args,
@@ -358,7 +358,7 @@ pub async fn run_agent_now(
                 .sdk
                 .spawn_session(
                     &node.id,
-                    &agent.id,
+                    &project.id,
                     &node.id,
                     &sdk.program,
                     &sdk.args,
@@ -371,8 +371,8 @@ pub async fn run_agent_now(
     }
 
     log::info!(
-        "Started agent run: {} → node {} (branch {})",
-        agent.name,
+        "Started project run: {} → node {} (branch {})",
+        project.name,
         node.id,
         node.branch_name
     );
@@ -403,12 +403,12 @@ pub async fn fork_node(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    // 2. Fetch the agent
+    // 2. Fetch the project
     let db3 = db2.clone();
-    let aid = parent_node.agent_id.clone();
-    let agent = tokio::task::spawn_blocking(move || {
+    let pid = parent_node.project_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
         let conn = db3.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))
+        db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -441,7 +441,7 @@ pub async fn fork_node(
 
     // 4. Create worktree from parent's commit
     let branch_name = make_branch_name(&label);
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     let branch = branch_name.clone();
     let commit = from_commit.clone();
     let wt_info = tokio::task::spawn_blocking(move || {
@@ -462,7 +462,7 @@ pub async fn fork_node(
     let now = db::now_unix();
     let node = DecisionNode {
         id: uuid::Uuid::new_v4().to_string(),
-        agent_id: agent.id.clone(),
+        project_id: project.id.clone(),
         parent_id: Some(node_id),
         label,
         prompt,
@@ -492,7 +492,7 @@ pub async fn fork_node(
 #[tauri::command]
 pub async fn create_structural_node(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
     parent_id: Option<String>,
     label: String,
     prompt: String,
@@ -511,7 +511,7 @@ pub async fn create_structural_node(
 
     let node = DecisionNode {
         id,
-        agent_id,
+        project_id,
         parent_id,
         label,
         prompt,
@@ -560,12 +560,12 @@ pub async fn merge_node_branch(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    // 2. Fetch agent for repo_path
+    // 2. Fetch project for repo_path
     let db3 = db2.clone();
-    let aid = node.agent_id.clone();
-    let agent = tokio::task::spawn_blocking(move || {
+    let pid = node.project_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
         let conn = db3.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))
+        db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -601,7 +601,7 @@ pub async fn merge_node_branch(
     // 4. Determine merge source: use branch name if it exists, fall back to commit hash.
     //    The branch may have been deleted by a previous merge attempt that cleaned up
     //    the worktree, but the commits are still reachable by hash.
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     let branch = node.branch_name.clone();
     let commit_hash_fallback = node.commit_hash.clone();
     let merge_source = {
@@ -641,7 +641,7 @@ pub async fn merge_node_branch(
             node_id
         );
 
-        let repo_for_resolve = agent.repo_path.clone();
+        let repo_for_resolve = project.repo_path.clone();
         let conflicts = result.conflict_files.clone();
         let resolution_model = get_settings()
             .await
@@ -656,7 +656,7 @@ pub async fn merge_node_branch(
         match resolution {
             Ok(summary) => {
                 // Finalize the merge commit
-                let repo_fin = agent.repo_path.clone();
+                let repo_fin = project.repo_path.clone();
                 match tokio::task::spawn_blocking(move || {
                     git_manager::finalize_merge_resolution(&repo_fin)
                 })
@@ -674,7 +674,7 @@ pub async fn merge_node_branch(
                     }
                     _ => {
                         // Finalize failed — abort
-                        let repo_abort = agent.repo_path.clone();
+                        let repo_abort = project.repo_path.clone();
                         tokio::task::spawn_blocking(move || {
                             git_manager::abort_merge(&repo_abort);
                         })
@@ -686,7 +686,7 @@ pub async fn merge_node_branch(
             Err(e) => {
                 log::warn!("Auto-resolution failed for node {}: {e}", node_id);
                 // Abort the merge and return the original conflicts
-                let repo_abort = agent.repo_path.clone();
+                let repo_abort = project.repo_path.clone();
                 tokio::task::spawn_blocking(move || {
                     git_manager::abort_merge(&repo_abort);
                 })
@@ -696,7 +696,7 @@ pub async fn merge_node_branch(
         }
     } else if !result.success {
         // No conflicts to resolve — just abort
-        let repo_abort = agent.repo_path.clone();
+        let repo_abort = project.repo_path.clone();
         tokio::task::spawn_blocking(move || {
             git_manager::abort_merge(&repo_abort);
         })
@@ -718,7 +718,7 @@ pub async fn merge_node_branch(
 
         // Remove the worktree (branch is already merged)
         if let Some(wt_path) = &node.worktree_path {
-            let repo = agent.repo_path.clone();
+            let repo = project.repo_path.clone();
             let wt = wt_path.clone();
             let _ =
                 tokio::task::spawn_blocking(move || git_manager::remove_worktree(&repo, &wt, true))
@@ -741,9 +741,9 @@ pub async fn get_merge_preview(
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         let node = db::node_get_by_id(&conn, &node_id).map_err(|e| format!("{e}"))?;
-        let agent = db::agent_get_by_id(&conn, &node.agent_id).map_err(|e| format!("{e}"))?;
+        let project = db::project_get_by_id(&conn, &node.project_id).map_err(|e| format!("{e}"))?;
 
-        git_manager::get_merge_preview(&agent.repo_path, &node.branch_name, None)
+        git_manager::get_merge_preview(&project.repo_path, &node.branch_name, None)
             .map_err(|e| format!("{e}"))
     })
     .await
@@ -758,7 +758,7 @@ pub async fn delete_node_branch(
     let db = state.db.clone();
     let db2 = db.clone();
 
-    // 1. Fetch node + agent
+    // 1. Fetch node + project
     let nid = node_id.clone();
     let node = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
@@ -768,17 +768,17 @@ pub async fn delete_node_branch(
     .map_err(|e| format!("Task error: {e}"))??;
 
     let db3 = db2.clone();
-    let aid = node.agent_id.clone();
-    let agent = tokio::task::spawn_blocking(move || {
+    let pid = node.project_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
         let conn = db3.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))
+        db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 2. Remove worktree if it exists
     if let Some(wt_path) = &node.worktree_path {
-        let repo = agent.repo_path.clone();
+        let repo = project.repo_path.clone();
         let wt = wt_path.clone();
         let _ = tokio::task::spawn_blocking(move || git_manager::remove_worktree(&repo, &wt, true))
             .await;
@@ -804,7 +804,7 @@ pub async fn delete_node_branch(
 #[tauri::command]
 pub async fn create_root_node(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
     label: String,
     prompt: String,
 ) -> Result<DecisionNode, String> {
@@ -814,7 +814,7 @@ pub async fn create_root_node(
 
     let node = DecisionNode {
         id,
-        agent_id,
+        project_id,
         parent_id: None,
         label,
         prompt,
@@ -864,18 +864,18 @@ pub async fn run_node(
         return Err(format!("Node {} is not pending — cannot run", node.id));
     }
 
-    // 2. Fetch the agent
+    // 2. Fetch the project
     let db3 = db2.clone();
-    let aid = node.agent_id.clone();
-    let agent = tokio::task::spawn_blocking(move || {
+    let pid = node.project_id.clone();
+    let project = tokio::task::spawn_blocking(move || {
         let conn = db3.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))
+        db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 3. Ensure the repo path is a git repo
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     tokio::task::spawn_blocking(move || {
         git_manager::ensure_git_repo(&repo_path).map_err(|e| format!("{e}"))
     })
@@ -911,7 +911,7 @@ pub async fn run_node(
 
     // 5. Create worktree
     let branch_name = make_branch_name(&node.label);
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     let branch = branch_name.clone();
     let commit_ref = from_commit.clone();
     let wt_info = tokio::task::spawn_blocking(move || {
@@ -954,7 +954,7 @@ pub async fn run_node(
     let toon_context = {
         let db5 = db2.clone();
         let node_for_ctx = node.clone();
-        let repo_path_for_ctx = agent.repo_path.clone();
+        let repo_path_for_ctx = project.repo_path.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db5.lock().map_err(|e| format!("DB lock error: {e}"))?;
             let ctx =
@@ -969,9 +969,9 @@ pub async fn run_node(
     // 9. Build execution and spawn session with TOON context
     let exec_model2 = get_settings().await.ok().and_then(|s| s.execution_model);
     let execution = agent_templates::build_shell_command(
-        &agent.agent_type,
+        &project.agent_type,
         &node.prompt,
-        &agent.type_config,
+        &project.type_config,
         Some(&toon_context),
         node.node_type.as_deref(),
         exec_model2.as_deref(),
@@ -983,7 +983,7 @@ pub async fn run_node(
                 .pty
                 .spawn_session(
                     &node.id,
-                    &agent.id,
+                    &project.id,
                     &node.id,
                     &shell.program,
                     &shell.args,
@@ -1000,7 +1000,7 @@ pub async fn run_node(
                 .sdk
                 .spawn_session(
                     &node.id,
-                    &agent.id,
+                    &project.id,
                     &node.id,
                     &sdk.program,
                     &sdk.args,
@@ -1054,12 +1054,12 @@ pub async fn update_node(
 #[tauri::command]
 pub async fn get_root_nodes(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
 ) -> Result<Vec<DecisionNode>, String> {
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_get_roots(&conn, &agent_id).map_err(|e| format!("DB error: {e}"))
+        db::node_get_roots(&conn, &project_id).map_err(|e| format!("DB error: {e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
@@ -1382,19 +1382,19 @@ pub async fn reset_node_status(
 #[tauri::command]
 pub async fn generate_plan(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
     prompt: String,
     complexity: Option<String>,
 ) -> Result<Vec<DecisionNode>, String> {
-    // Look up agent to get project_mode, but treat as "existing" if any
+    // Look up project to get project_mode, but treat as "existing" if any
     // session has already completed (the project is no longer blank).
     let db_mode = state.db.clone();
-    let aid = agent_id.clone();
+    let pid = project_id.clone();
     let project_mode = tokio::task::spawn_blocking(move || {
         let conn = db_mode.lock().map_err(|e| format!("DB lock: {e}"))?;
-        let agent = db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))?;
-        if agent.project_mode == "blank" {
-            let roots = db::node_get_roots(&conn, &aid).map_err(|e| format!("{e}"))?;
+        let project = db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))?;
+        if project.project_mode == "blank" {
+            let roots = db::node_get_roots(&conn, &pid).map_err(|e| format!("{e}"))?;
             let has_completed = roots.iter().any(|r| {
                 r.status == crate::models::NodeStatus::Completed
                     || r.status == crate::models::NodeStatus::Merged
@@ -1403,7 +1403,7 @@ pub async fn generate_plan(
                 return Ok::<String, String>("existing".to_string());
             }
         }
-        Ok(agent.project_mode)
+        Ok(project.project_mode)
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -1422,7 +1422,7 @@ pub async fn generate_plan(
     .await?;
 
     // Convert to nodes
-    let nodes = plan_generator::plan_to_nodes(&plan, &agent_id);
+    let nodes = plan_generator::plan_to_nodes(&plan, &project_id);
 
     // Batch insert into DB
     let db = state.db.clone();
@@ -1438,9 +1438,9 @@ pub async fn generate_plan(
     .map_err(|e| format!("Task error: {e}"))??;
 
     log::info!(
-        "Generated plan with {} nodes for agent {}",
+        "Generated plan with {} nodes for project {}",
         nodes.len(),
-        agent_id
+        project_id
     );
     Ok(nodes)
 }
@@ -1450,14 +1450,14 @@ pub async fn generate_plan(
 #[tauri::command]
 pub async fn get_repo_branch(
     state: State<'_, AppState>,
-    agent_id: String,
+    project_id: String,
 ) -> Result<String, String> {
     let db = state.db.clone();
 
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        let agent = db::agent_get_by_id(&conn, &agent_id).map_err(|e| format!("{e}"))?;
-        git_manager::get_default_branch(&agent.repo_path).map_err(|e| format!("{e}"))
+        let project = db::project_get_by_id(&conn, &project_id).map_err(|e| format!("{e}"))?;
+        git_manager::get_default_branch(&project.repo_path).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?
@@ -1474,14 +1474,14 @@ pub async fn create_feature_branch(
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         let node = db::node_get_by_id(&conn, &node_id).map_err(|e| format!("{e}"))?;
-        let agent = db::agent_get_by_id(&conn, &node.agent_id).map_err(|e| format!("{e}"))?;
+        let project = db::project_get_by_id(&conn, &node.project_id).map_err(|e| format!("{e}"))?;
 
         let commit = node
             .commit_hash
             .as_deref()
             .ok_or_else(|| "Node has no commit hash — run the session first".to_string())?;
 
-        git_manager::create_branch_at(&agent.repo_path, &branch_name, commit)
+        git_manager::create_branch_at(&project.repo_path, &branch_name, commit)
             .map_err(|e| format!("{e}"))
     })
     .await
@@ -1500,8 +1500,8 @@ pub async fn get_node_context(
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         let node = db::node_get_by_id(&conn, &node_id).map_err(|e| format!("{e}"))?;
-        let agent = db::agent_get_by_id(&conn, &node.agent_id).map_err(|e| format!("{e}"))?;
-        let ctx = context::build_execution_context(&conn, &node, Some(&agent.repo_path))
+        let project = db::project_get_by_id(&conn, &node.project_id).map_err(|e| format!("{e}"))?;
+        let ctx = context::build_execution_context(&conn, &node, Some(&project.repo_path))
             .map_err(|e| format!("Context build error: {e}"))?;
         toon::build_context_string(&ctx)
     })

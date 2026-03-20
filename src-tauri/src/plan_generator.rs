@@ -257,13 +257,13 @@ pub async fn generate_plan(
 
 /// Convert a plan tree into flat DecisionNode records ready for DB insertion.
 /// Generates UUIDs and wires parent_id relationships.
-pub fn plan_to_nodes(plan: &GeneratedPlan, agent_id: &str) -> Vec<DecisionNode> {
+pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode> {
     let mut nodes = Vec::new();
     let now = db::now_unix();
 
     fn visit(
         plan_node: &PlanNode,
-        agent_id: &str,
+        project_id: &str,
         parent_id: Option<String>,
         now: i64,
         nodes: &mut Vec<DecisionNode>,
@@ -273,7 +273,7 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, agent_id: &str) -> Vec<DecisionNode> 
 
         nodes.push(DecisionNode {
             id: id.clone(),
-            agent_id: agent_id.to_string(),
+            project_id: project_id.to_string(),
             parent_id,
             label: plan_node.label.clone(),
             prompt: plan_node.prompt.clone(),
@@ -289,10 +289,10 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, agent_id: &str) -> Vec<DecisionNode> 
         });
 
         for child in &plan_node.children {
-            visit(child, agent_id, Some(id.clone()), now, nodes);
+            visit(child, project_id, Some(id.clone()), now, nodes);
         }
     }
 
-    visit(&plan.root, agent_id, None, now, &mut nodes);
+    visit(&plan.root, project_id, None, now, &mut nodes);
     nodes
 }

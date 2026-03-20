@@ -1,17 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Agent, AgentTypeConfig, AppSettings, DecisionNode, MergeResult, OrchestratorStatus } from "../types";
+import type { AgentTypeConfig, AppSettings, DecisionNode, MergeResult, OrchestratorStatus, Project } from "../types";
 
-// ─── Agent CRUD ────────────────────────────────────────────────
+// ─── Project CRUD ──────────────────────────────────────────────
 
-export async function createAgent(params: {
+export async function createProject(params: {
   name: string;
   prompt: string;
   repoPath: string;
   agentType: string;
   typeConfig: AgentTypeConfig;
   projectMode?: string;
-}): Promise<Agent> {
-  return invoke("create_agent", {
+}): Promise<Project> {
+  return invoke("create_project", {
     name: params.name,
     prompt: params.prompt,
     repoPath: params.repoPath,
@@ -21,15 +21,15 @@ export async function createAgent(params: {
   });
 }
 
-export async function getAgents(): Promise<Agent[]> {
-  return invoke("get_agents");
+export async function getProjects(): Promise<Project[]> {
+  return invoke("get_projects");
 }
 
-export async function getAgent(id: string): Promise<Agent> {
-  return invoke("get_agent", { id });
+export async function getProject(id: string): Promise<Project> {
+  return invoke("get_project", { id });
 }
 
-export async function updateAgent(params: {
+export async function updateProject(params: {
   id: string;
   name: string;
   prompt: string;
@@ -38,8 +38,8 @@ export async function updateAgent(params: {
   typeConfig: AgentTypeConfig;
   isActive: boolean;
   projectMode?: string;
-}): Promise<Agent> {
-  return invoke("update_agent", {
+}): Promise<Project> {
+  return invoke("update_project", {
     id: params.id,
     name: params.name,
     prompt: params.prompt,
@@ -51,29 +51,29 @@ export async function updateAgent(params: {
   });
 }
 
-export async function deleteAgent(id: string): Promise<void> {
-  return invoke("delete_agent", { id });
+export async function deleteProject(id: string): Promise<void> {
+  return invoke("delete_project", { id });
 }
 
-export async function toggleAgent(
+export async function toggleProject(
   id: string,
   isActive: boolean,
-): Promise<Agent> {
-  return invoke("toggle_agent", { id, isActive });
+): Promise<Project> {
+  return invoke("toggle_project", { id, isActive });
 }
 
 // ─── Decision Tree ─────────────────────────────────────────────
 
 export async function getDecisionTree(
-  agentId: string,
+  projectId: string,
 ): Promise<DecisionNode[]> {
-  return invoke("get_decision_tree", { agentId });
+  return invoke("get_decision_tree", { projectId });
 }
 
 // ─── Git + Node Operations ────────────────────────────────────
 
-export async function runAgentNow(id: string): Promise<DecisionNode> {
-  return invoke("run_agent_now", { id });
+export async function runProjectNow(id: string): Promise<DecisionNode> {
+  return invoke("run_project_now", { id });
 }
 
 export async function forkNode(
@@ -91,14 +91,14 @@ export async function mergeNodeBranch(
 }
 
 export async function createStructuralNode(params: {
-  agentId: string;
+  projectId: string;
   parentId: string | null;
   label: string;
   prompt: string;
   nodeType: string;
 }): Promise<DecisionNode> {
   return invoke("create_structural_node", {
-    agentId: params.agentId,
+    projectId: params.projectId,
     parentId: params.parentId,
     label: params.label,
     prompt: params.prompt,
@@ -107,11 +107,11 @@ export async function createStructuralNode(params: {
 }
 
 export async function createRootNode(
-  agentId: string,
+  projectId: string,
   label: string,
   prompt: string,
 ): Promise<DecisionNode> {
-  return invoke("create_root_node", { agentId, label, prompt });
+  return invoke("create_root_node", { projectId, label, prompt });
 }
 
 export async function runNode(nodeId: string): Promise<DecisionNode> {
@@ -126,8 +126,8 @@ export async function updateNode(
   return invoke("update_node", { nodeId, label, prompt });
 }
 
-export async function getRootNodes(agentId: string): Promise<DecisionNode[]> {
-  return invoke("get_root_nodes", { agentId });
+export async function getRootNodes(projectId: string): Promise<DecisionNode[]> {
+  return invoke("get_root_nodes", { projectId });
 }
 
 export async function deleteNodeBranch(
@@ -242,8 +242,8 @@ export async function getMergePreview(nodeId: string): Promise<MergePreview> {
 
 // ─── Git Branch Operations ────────────────────────────────────
 
-export async function getRepoBranch(agentId: string): Promise<string> {
-  return invoke("get_repo_branch", { agentId });
+export async function getRepoBranch(projectId: string): Promise<string> {
+  return invoke("get_repo_branch", { projectId });
 }
 
 export async function createFeatureBranch(
@@ -266,9 +266,9 @@ export async function getNodeContext(nodeId: string): Promise<string> {
 // ─── Plan Generation ──────────────────────────────────────────
 
 export async function generatePlan(
-  agentId: string,
+  projectId: string,
   prompt: string,
   complexity?: "linear" | "branching",
 ): Promise<DecisionNode[]> {
-  return invoke("generate_plan", { agentId, prompt, complexity });
+  return invoke("generate_plan", { projectId, prompt, complexity });
 }

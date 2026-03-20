@@ -1,4 +1,4 @@
-import type { Agent } from "../types";
+import type { Project } from "../types";
 import {
   Dialog,
   DialogClose,
@@ -11,12 +11,12 @@ import {
 import { Button } from "@/components/ui/button";
 
 interface DeleteConfirmProps {
-  agent: Agent;
+  project: Project;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-export function DeleteConfirm({ agent, onConfirm, onClose }: DeleteConfirmProps) {
+export function DeleteConfirm({ project, onConfirm, onClose }: DeleteConfirmProps) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-sm">
@@ -24,7 +24,7 @@ export function DeleteConfirm({ agent, onConfirm, onClose }: DeleteConfirmProps)
           <DialogTitle>Delete Project</DialogTitle>
           <DialogDescription>
             Are you sure you want to delete{" "}
-            <strong className="font-semibold text-foreground">{agent.name}</strong>?
+            <strong className="font-semibold text-foreground">{project.name}</strong>?
             This will remove the project and all its session history. This
             action cannot be undone.
           </DialogDescription>

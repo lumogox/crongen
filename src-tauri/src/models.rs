@@ -81,10 +81,10 @@ fn default_true() -> bool {
     true
 }
 
-// ─── Agent ─────────────────────────────────────────────────────
+// ─── Project ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Agent {
+pub struct Project {
     pub id: String,
     pub name: String,
     pub prompt: String, // Used as "description" in the UI
@@ -139,7 +139,7 @@ impl NodeStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionNode {
     pub id: String,
-    pub agent_id: String,
+    pub project_id: String,
     pub parent_id: Option<String>,
     pub label: String,
     pub prompt: String,

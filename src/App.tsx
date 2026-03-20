@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import type { Agent, AppSettings, DecisionNode, ModalType, NodeStatus, OrchestratorMode, OrchestratorStatus, PendingDecision } from "./types";
+import type { AppSettings, DecisionNode, ModalType, NodeStatus, OrchestratorMode, OrchestratorStatus, PendingDecision, Project } from "./types";
 import {
-  getAgents,
-  createAgent,
-  updateAgent,
-  deleteAgent,
+  getProjects,
+  createProject,
+  updateProject,
+  deleteProject,
   getDecisionTree,
-  runAgentNow,
+  runProjectNow,
   forkNode,
   createStructuralNode,
   mergeNodeBranch,
@@ -29,7 +29,7 @@ import {
   getRepoBranch,
 } from "./lib/tauri-commands";
 import { ContentArea } from "./components/ContentArea";
-import { AgentModal } from "./components/AgentModal";
+import { ProjectModal } from "./components/ProjectModal";
 import { DeleteConfirm } from "./components/DeleteConfirm";
 import { ForkModal } from "./components/ForkModal";
 import { SessionModal } from "./components/SessionModal";
@@ -38,8 +38,8 @@ import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModa
 import { SettingsModal } from "./components/SettingsModal";
 
 function App() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalType>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -63,12 +63,22 @@ function App() {
 
   // ─── Settings state ────────────────────────────────────────
   const [settings, setSettings] = useState<AppSettings>({ debug_mode: false });
+  const selectedProjectIdRef = useRef<string | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
 
-  // Load agents + settings on mount
+  // Load projects + settings on mount
   useEffect(() => {
-    loadAgents();
+    loadProjects();
     getSettings().then(setSettings).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    selectedProjectIdRef.current = selectedProjectId;
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   // Clear error after 5s
   useEffect(() => {
@@ -84,25 +94,25 @@ function App() {
     return () => clearTimeout(t);
   }, [success]);
 
-  // Load sessions (root nodes) when selected agent changes
+  // Load sessions (root nodes) when selected project changes
   useEffect(() => {
-    if (!selectedAgentId) {
+    if (!selectedProjectId) {
       setSessions([]);
       setSelectedSessionId(null);
       return;
     }
-    getRootNodes(selectedAgentId)
+    getRootNodes(selectedProjectId)
       .then(setSessions)
       .catch((e) => setError(String(e)));
-  }, [selectedAgentId]);
+  }, [selectedProjectId]);
 
-  // Fetch current branch for the selected agent's repo
+  // Fetch current branch for the selected project's repo
   useEffect(() => {
-    if (!selectedAgentId) { setCurrentBranch(null); return; }
-    getRepoBranch(selectedAgentId)
+    if (!selectedProjectId) { setCurrentBranch(null); return; }
+    getRepoBranch(selectedProjectId)
       .then(setCurrentBranch)
       .catch(() => setCurrentBranch(null));
-  }, [selectedAgentId]);
+  }, [selectedProjectId]);
 
   // Filter nodes to a session's subtree
   function filterSessionSubtree(nodes: DecisionNode[], sessionId: string | null): DecisionNode[] {
@@ -121,14 +131,14 @@ function App() {
 
   // Load tree when selected session changes
   useEffect(() => {
-    if (!selectedAgentId) {
+    if (!selectedProjectId) {
       setTreeNodes([]);
       setSelectedNodeId(null);
       setOrchestratorStatus(null);
       return;
     }
     setTreeLoading(true);
-    setSelectedNodeId(null);
+    setSelectedNodeId(selectedSessionId);
     setOrchestratorStatus(null);
     if (!selectedSessionId) {
       // No session selected — show empty canvas
@@ -136,7 +146,7 @@ function App() {
       setTreeLoading(false);
       return;
     }
-    getDecisionTree(selectedAgentId)
+    getDecisionTree(selectedProjectId)
       .then((nodes) => {
         setTreeNodes(filterSessionSubtree(nodes, selectedSessionId));
         // Restore orchestrator status if this session has an active run
@@ -146,13 +156,13 @@ function App() {
       })
       .catch((e) => setError(String(e)))
       .finally(() => setTreeLoading(false));
-  }, [selectedAgentId, selectedSessionId]);
+  }, [selectedProjectId, selectedSessionId]);
 
   // ─── Tauri event listeners ─────────────────────────────────
   useEffect(() => {
     const unlisteners: (() => void)[] = [];
 
-    listen<{ node_id: string }>("session_started", (event) => {
+    listen<{ session_id: string; node_id: string; project_id: string }>("session_started", (event) => {
       setTreeNodes((prev) =>
         prev.map((n) =>
           n.id === event.payload.node_id
@@ -160,12 +170,35 @@ function App() {
             : n,
         ),
       );
+
+      const activeProjectId = selectedProjectIdRef.current;
+      if (activeProjectId && event.payload.project_id === activeProjectId) {
+        getRootNodes(activeProjectId)
+          .then((roots) => {
+            if (selectedProjectIdRef.current === activeProjectId) {
+              setSessions(roots);
+            }
+          })
+          .catch(() => {});
+      }
     }).then((unlisten) => unlisteners.push(unlisten));
 
     listen<{ node_id: string; exit_code: number }>("session_ended", (event) => {
       const { node_id, exit_code } = event.payload;
       const newStatus: NodeStatus = exit_code === 0 ? "completed" : "failed";
       setTreeNodes((prev) =>
+        prev.map((n) =>
+          n.id === node_id
+            ? {
+                ...n,
+                status: newStatus,
+                exit_code,
+                updated_at: Math.floor(Date.now() / 1000),
+              }
+            : n,
+        ),
+      );
+      setSessions((prev) =>
         prev.map((n) =>
           n.id === node_id
             ? {
@@ -187,10 +220,24 @@ function App() {
             : n,
         ),
       );
+      setSessions((prev) =>
+        prev.map((n) =>
+          n.id === event.payload.node_id
+            ? { ...n, status: "paused" as NodeStatus, updated_at: Math.floor(Date.now() / 1000) }
+            : n,
+        ),
+      );
     }).then((unlisten) => unlisteners.push(unlisten));
 
     listen<{ node_id: string }>("session_resumed", (event) => {
       setTreeNodes((prev) =>
+        prev.map((n) =>
+          n.id === event.payload.node_id
+            ? { ...n, status: "running" as NodeStatus, updated_at: Math.floor(Date.now() / 1000) }
+            : n,
+        ),
+      );
+      setSessions((prev) =>
         prev.map((n) =>
           n.id === event.payload.node_id
             ? { ...n, status: "running" as NodeStatus, updated_at: Math.floor(Date.now() / 1000) }
@@ -242,8 +289,10 @@ function App() {
             : prev,
         );
         // Reload tree to pick up all status changes (filter to current session)
-        if (selectedAgentId) {
-          getDecisionTree(selectedAgentId)
+        const activeProjectId = selectedProjectIdRef.current;
+        const activeSessionId = selectedSessionIdRef.current;
+        if (activeProjectId && activeSessionId === event.payload.session_id) {
+          getDecisionTree(activeProjectId)
             .then((nodes) => {
               // Use event session_id as the filter key since it's fresh from the event
               const sid = event.payload.session_id;
@@ -259,37 +308,37 @@ function App() {
     };
   }, []);
 
-  async function loadAgents() {
+  async function loadProjects() {
     try {
-      const list = await getAgents();
-      setAgents(list);
+      const list = await getProjects();
+      setProjects(list);
     } catch (e) {
       setError(String(e));
     }
   }
 
-  const selectedAgent =
-    agents.find((a) => a.id === selectedAgentId) ?? null;
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? null;
 
-  // ─── Agent handlers ────────────────────────────────────────
+  // ─── Project handlers ──────────────────────────────────────
 
-  const handleNewAgent = useCallback(() => {
-    setModal({ kind: "create_agent" });
+  const handleNewProject = useCallback(() => {
+    setModal({ kind: "create_project" });
   }, []);
 
-  const handleEditAgent = useCallback((agent: Agent) => {
-    setModal({ kind: "edit_agent", agent });
+  const handleEditProject = useCallback((project: Project) => {
+    setModal({ kind: "edit_project", project });
   }, []);
 
-  const handleDeleteAgent = useCallback((agent: Agent) => {
-    setModal({ kind: "delete_agent", agent });
+  const handleDeleteProject = useCallback((project: Project) => {
+    setModal({ kind: "delete_project", project });
   }, []);
 
-  const handleSaveAgent = useCallback(
-    async (params: Parameters<typeof createAgent>[0] & { id?: string; isActive: boolean; projectMode?: string }) => {
+  const handleSaveProject = useCallback(
+    async (params: Parameters<typeof createProject>[0] & { id?: string; isActive: boolean; projectMode?: string }) => {
       try {
         if (params.id) {
-          await updateAgent({
+          await updateProject({
             id: params.id,
             name: params.name,
             prompt: params.prompt,
@@ -300,7 +349,7 @@ function App() {
             projectMode: params.projectMode,
           });
         } else {
-          const created = await createAgent({
+          const created = await createProject({
             name: params.name,
             prompt: params.prompt,
             repoPath: params.repoPath,
@@ -308,9 +357,9 @@ function App() {
             typeConfig: params.typeConfig,
             projectMode: params.projectMode,
           });
-          setSelectedAgentId(created.id);
+          setSelectedProjectId(created.id);
         }
-        await loadAgents();
+        await loadProjects();
         setModal(null);
       } catch (e) {
         setError(String(e));
@@ -320,26 +369,28 @@ function App() {
   );
 
   const handleConfirmDelete = useCallback(async () => {
-    if (modal?.kind !== "delete_agent") return;
+    if (modal?.kind !== "delete_project") return;
     try {
-      await deleteAgent(modal.agent.id);
-      if (selectedAgentId === modal.agent.id) {
-        setSelectedAgentId(null);
+      await deleteProject(modal.project.id);
+      if (selectedProjectId === modal.project.id) {
+        setSelectedProjectId(null);
       }
-      await loadAgents();
+      await loadProjects();
       setModal(null);
     } catch (e) {
       setError(String(e));
     }
-  }, [modal, selectedAgentId]);
+  }, [modal, selectedProjectId]);
 
   // ─── Tree handlers ─────────────────────────────────────────
 
   const handleRunNow = useCallback(
-    async (agentId: string) => {
+    async (projectId: string) => {
       try {
-        const rootNode = await runAgentNow(agentId);
-        setTreeNodes((prev) => [...prev, rootNode]);
+        const rootNode = await runProjectNow(projectId);
+        setSessions((prev) => [rootNode, ...prev.filter((session) => session.id !== rootNode.id)]);
+        setSelectedSessionId(rootNode.id);
+        setTreeNodes([rootNode]);
         setSelectedNodeId(rootNode.id);
       } catch (e) {
         setError(String(e));
@@ -379,10 +430,10 @@ function App() {
 
   const handleConfirmStructuralNode = useCallback(
     async (_parentId: string, label: string, prompt: string) => {
-      if (modal?.kind !== "create_structural_node" || !selectedAgentId) return;
+      if (modal?.kind !== "create_structural_node" || !selectedProjectId) return;
       try {
         const newNode = await createStructuralNode({
-          agentId: selectedAgentId,
+          projectId: selectedProjectId,
           parentId: modal.parentId,
           label,
           prompt,
@@ -395,7 +446,7 @@ function App() {
         setError(String(e));
       }
     },
-    [modal, selectedAgentId],
+    [modal, selectedProjectId],
   );
 
   const handlePauseNode = useCallback(
@@ -429,8 +480,8 @@ function App() {
             ? `Merged (auto-resolved ${result.conflict_files.length} conflict${result.conflict_files.length === 1 ? "" : "s"})`
             : "Branch merged into main successfully";
           setSuccess(msg);
-          if (selectedAgentId) {
-            const updated = await getDecisionTree(selectedAgentId);
+          if (selectedProjectId) {
+            const updated = await getDecisionTree(selectedProjectId);
             setTreeNodes(filterSessionSubtree(updated, selectedSessionId));
           }
         } else {
@@ -442,16 +493,16 @@ function App() {
         setError(String(e));
       }
     },
-    [selectedAgentId, selectedSessionId],
+    [selectedProjectId, selectedSessionId],
   );
 
   // ─── Flow drawing handlers ────────────────────────────────
 
   const handleCreateSession = useCallback(
     async (label: string, prompt: string) => {
-      if (!selectedAgentId) return;
+      if (!selectedProjectId) return;
       try {
-        const rootNode = await createRootNode(selectedAgentId, label, prompt);
+        const rootNode = await createRootNode(selectedProjectId, label, prompt);
         setSessions((prev) => [rootNode, ...prev]);
         setTreeNodes((prev) => [...prev, rootNode]);
         setSelectedSessionId(rootNode.id);
@@ -461,7 +512,7 @@ function App() {
         setError(String(e));
       }
     },
-    [selectedAgentId],
+    [selectedProjectId],
   );
 
   const handleRunNode = useCallback(
@@ -581,7 +632,7 @@ function App() {
 
   const handleQuickRun = useCallback(
     async (prompt: string) => {
-      if (!selectedAgentId) return;
+      if (!selectedProjectId) return;
       try {
         setIsGeneratingPlan(true);
         // Derive a short label: take first sentence or first N words
@@ -590,7 +641,7 @@ function App() {
           ? firstSentence
           : firstSentence.split(/\s+/).slice(0, 6).join(" ")
         ) || "Quick task";
-        const rootNode = await createRootNode(selectedAgentId, label, prompt);
+        const rootNode = await createRootNode(selectedProjectId, label, prompt);
         setSessions((prev) => [rootNode, ...prev]);
         setSelectedSessionId(rootNode.id);
         setTreeNodes([rootNode]);
@@ -605,15 +656,15 @@ function App() {
         setIsGeneratingPlan(false);
       }
     },
-    [selectedAgentId],
+    [selectedProjectId],
   );
 
   const handleGeneratePlan = useCallback(
     async (prompt: string, complexity?: "linear" | "branching") => {
-      if (!selectedAgentId) return;
+      if (!selectedProjectId) return;
       try {
         setIsGeneratingPlan(true);
-        const nodes = await generatePlan(selectedAgentId, prompt, complexity);
+        const nodes = await generatePlan(selectedProjectId, prompt, complexity);
         // Add nodes to tree and select the root session
         setTreeNodes((prev) => [...prev, ...nodes]);
         if (nodes.length > 0) {
@@ -631,7 +682,7 @@ function App() {
         setIsGeneratingPlan(false);
       }
     },
-    [selectedAgentId],
+    [selectedProjectId],
   );
 
   // ─── Settings handlers ─────────────────────────────────────
@@ -662,11 +713,11 @@ function App() {
         prev.map((s) => s.id === selectedSessionId ? { ...s, status: "merged" as const } : s),
       );
     }
-    if (selectedAgentId) {
-      const updated = await getDecisionTree(selectedAgentId);
+    if (selectedProjectId) {
+      const updated = await getDecisionTree(selectedProjectId);
       setTreeNodes(filterSessionSubtree(updated, selectedSessionId));
     }
-  }, [selectedAgentId, selectedSessionId]);
+  }, [selectedProjectId, selectedSessionId]);
 
   // Find parent node for fork / structural modals
   const forkParentNode =
@@ -684,13 +735,13 @@ function App() {
       <div className="h-screen overflow-hidden p-4">
         <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/70 p-4 shadow-[0_30px_120px_rgba(2,6,23,0.65)] backdrop-blur-xl">
           <ContentArea
-            agents={agents}
-            selectedAgentId={selectedAgentId}
-            onSelectAgent={setSelectedAgentId}
-            onNewAgent={handleNewAgent}
-            onEditAgent={handleEditAgent}
-            onDeleteAgent={handleDeleteAgent}
-            selectedAgent={selectedAgent}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            onSelectProject={setSelectedProjectId}
+            onNewProject={handleNewProject}
+            onEditProject={handleEditProject}
+            onDeleteProject={handleDeleteProject}
+            selectedProject={selectedProject}
             treeNodes={treeNodes}
             treeLoading={treeLoading}
             selectedNodeId={selectedNodeId}
@@ -724,24 +775,24 @@ function App() {
       </div>
 
       {/* Modals */}
-      {modal?.kind === "create_agent" && (
-        <AgentModal
+      {modal?.kind === "create_project" && (
+        <ProjectModal
           mode="create"
-          onSave={handleSaveAgent}
+          onSave={handleSaveProject}
           onClose={() => setModal(null)}
         />
       )}
-      {modal?.kind === "edit_agent" && (
-        <AgentModal
+      {modal?.kind === "edit_project" && (
+        <ProjectModal
           mode="edit"
-          agent={modal.agent}
-          onSave={handleSaveAgent}
+          project={modal.project}
+          onSave={handleSaveProject}
           onClose={() => setModal(null)}
         />
       )}
-      {modal?.kind === "delete_agent" && (
+      {modal?.kind === "delete_project" && (
         <DeleteConfirm
-          agent={modal.agent}
+          project={modal.project}
           onConfirm={handleConfirmDelete}
           onClose={() => setModal(null)}
         />

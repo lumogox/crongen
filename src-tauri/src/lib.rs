@@ -57,16 +57,16 @@ pub fn run() {
         })
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            // Agent CRUD
-            commands::create_agent,
-            commands::get_agents,
-            commands::get_agent,
-            commands::update_agent,
-            commands::delete_agent,
-            commands::toggle_agent,
+            // Project CRUD
+            commands::create_project,
+            commands::get_projects,
+            commands::get_project,
+            commands::update_project,
+            commands::delete_project,
+            commands::toggle_project,
             // Decision tree
             commands::get_decision_tree,
-            commands::run_agent_now,
+            commands::run_project_now,
             commands::fork_node,
             commands::create_structural_node,
             commands::create_root_node,

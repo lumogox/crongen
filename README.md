@@ -73,9 +73,9 @@ Claude Code runs headless with `--output-format stream-json`, capturing structur
 |                                                       |
 |  +------------------+  +---------------------------+  |
 |  |    Sidebar        |  |    Decision Canvas        |  |
-|  |  - Agent list     |  |    (React Flow + dagre)   |  |
+|  |  - Project list   |  |    (React Flow + dagre)   |  |
 |  |  - Session list   |  |  - ExecutionNode          |  |
-|  |  - New task btn   |  |  - ExecutionEdge          |  |
+|  |  - New project btn|  |  - ExecutionEdge          |  |
 |  |                   |  |  - NodePalette (DnD)      |  |
 |  +------------------+  +---------------------------+  |
 |                         +---------------------------+  |
@@ -95,7 +95,7 @@ Claude Code runs headless with `--output-format stream-json`, capturing structur
 |       +----> sdk_manager.rs  (headless subprocess)    |
 |       +----> orchestrator.rs (auto/supervised loop)   |
 |       +----> plan_generator.rs (LLM plan creation)   |
-|       +----> context.rs + toon.rs (agent context)     |
+|       +----> context.rs + toon.rs (execution context) |
 |       +----> db.rs (SQLite via rusqlite)              |
 |                                                       |
 +------------------------------------------------------+
@@ -104,7 +104,7 @@ Claude Code runs headless with `--output-format stream-json`, capturing structur
 ### Event Flow
 
 **Frontend to Backend** (Tauri `invoke`):
-`create_agent`, `run_node`, `fork_node`, `merge_node_branch`, `start_orchestrator`, etc. (30+ commands)
+`create_project`, `run_project_now`, `run_node`, `fork_node`, `merge_node_branch`, `start_orchestrator`, etc. (30+ commands)
 
 **Backend to Frontend** (Tauri `emit`):
 | Event | Payload | Purpose |
@@ -157,9 +157,9 @@ This produces platform-specific installers in `src-tauri/target/release/bundle/`
 
 ## Configuration
 
-### Creating a Project (Agent)
+### Creating a Project
 
-1. Click **"New task"** in the header or **"+"** in the sidebar
+1. Click **"New Project"** in the sidebar
 2. Fill in:
    - **Name** -- project display name
    - **Repository path** -- local git repo (auto-initialized if empty)
@@ -419,9 +419,9 @@ crongen/
 │   │   ├── InspectorPanel.tsx    # Right panel (node details + terminal)
 │   │   ├── TerminalView.tsx      # xterm.js terminal
 │   │   ├── SdkSessionView.tsx    # Claude Code JSON output viewer
-│   │   ├── Sidebar.tsx           # Agent & session list
+│   │   ├── Sidebar.tsx           # Project & session list
 │   │   ├── MergeDialog.tsx       # Ship-it merge workflow dialog
-│   │   ├── AgentModal.tsx        # Create/edit agent form
+│   │   ├── ProjectModal.tsx      # Create/edit project form
 │   │   ├── SessionModal.tsx      # New session / plan generation
 │   │   ├── ForkModal.tsx         # Fork node dialog
 │   │   ├── OrchestratorActivity.tsx        # Live orchestrator progress
@@ -444,7 +444,7 @@ crongen/
 │   ├── src/
 │   │   ├── main.rs               # Entry point
 │   │   ├── lib.rs                # Tauri app setup & command registration
-│   │   ├── models.rs             # Domain types (Agent, DecisionNode, etc.)
+│   │   ├── models.rs             # Domain types (Project, DecisionNode, etc.)
 │   │   ├── db.rs                 # SQLite schema & CRUD operations
 │   │   ├── commands.rs           # 30+ Tauri IPC command handlers
 │   │   ├── agent_templates.rs    # CLI command builder per agent type
@@ -469,7 +469,7 @@ crongen/
 
 Three tables in SQLite (stored in Tauri's app data directory):
 
-### `agents`
+### `projects`
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -490,7 +490,7 @@ Three tables in SQLite (stored in Tauri's app data directory):
 | Column | Type | Description |
 |--------|------|-------------|
 | id | TEXT PK | UUID |
-| agent_id | TEXT FK | References agents(id) |
+| project_id | TEXT FK | References projects(id) |
 | parent_id | TEXT FK | References decision_nodes(id), NULL for root |
 | label | TEXT | Short display label |
 | prompt | TEXT | Agent instruction |
@@ -549,7 +549,7 @@ cargo check          # Rust check (from src-tauri/)
 ## Implementation Snapshot
 
 The current codebase includes:
-- Agent CRUD with per-agent config, active state, and project mode persisted in SQLite.
+- Project CRUD with per-project config, active state, and project mode persisted in SQLite.
 - React Flow decision trees with dagre auto-layout, drag-to-create structural nodes, and a right-side inspector/terminal panel.
 - PTY sessions with xterm.js rendering, pause/resume support, stdin injection, and auto-response handling for interactive agents.
 - Claude Code SDK sessions with `stream-json` output parsing and a dedicated session viewer.

@@ -6,7 +6,7 @@
 
 ## 1. Design Principles
 
-**The tree is the product.** The canvas showing the agent's decision tree is the primary artifact users interact with. Every design choice supports reading, navigating, and steering the tree.
+**The tree is the product.** The canvas showing a project's decision tree is the primary artifact users interact with. Every design choice supports reading, navigating, and steering the tree.
 
 **Spatial over temporal.** Traditional terminal apps present agent output as a timeline (scrollback). crongen presents it as a *map* of explored paths. The user thinks in branches, not in history.
 
@@ -18,8 +18,8 @@
 
 ## 2. Core Concepts
 
-### Agent
-A configured task (name, shell, prompt, cron schedule) bound to a **single git repository**. The agent operates within worktrees of that repo. One agent = one repo = one decision tree.
+### Project
+A configured project (name, repository path, execution defaults) bound to a **single git repository**. The project owns one decision tree, and executable agent nodes operate within worktrees of that repo. One project = one repo = one decision tree.
 
 ### Decision Node
 A point in the tree representing a specific state: a git commit + prompt + session output. Nodes have a lifecycle: `pending → running → paused | completed | failed`.
@@ -43,12 +43,12 @@ The user selects a "winning" branch and merges it back into the main branch of t
 ┌──────────────────────────────────────────────────────────────────┐
 │  Title Bar                                                       │
 ├────────────┬─────────────────────────────────────────────────────┤
-│            │  Toolbar (agent name, zoom, actions)                │
+│            │  Toolbar (project name, zoom, actions)              │
 │            ├─────────────────────────────────────────────────────┤
 │  Sidebar   │                                                     │
 │  (260px)   │                                                     │
 │            │                Canvas                               │
-│  Agent     │             (Decision Tree)                         │
+│  Project   │             (Decision Tree)                         │
 │  List      │                                                     │
 │            │                                                     │
 │            │                                                     │
@@ -135,7 +135,7 @@ Monospace throughout. Same rationale as before: the app is a terminal-adjacent t
 
 | Element | Size | Weight |
 |---|---|---|
-| Agent name (sidebar) | 13px | 600 |
+| Project name (sidebar) | 13px | 600 |
 | Node label | 12px | 500 |
 | Node metadata (commit, prompt preview) | 11px | 400 |
 | Toolbar text | 12px | 400 |
@@ -149,15 +149,15 @@ Font stack: `JetBrains Mono`, `SF Mono`, `Cascadia Code`, `monospace`.
 
 ## 6. Component Details
 
-### 6.1 Sidebar — Agent List
+### 6.1 Sidebar — Project List
 
-The sidebar lists all configured agents. Each agent maps to one git repo and one decision tree.
+The sidebar lists all configured projects. Each project maps to one git repo and one decision tree.
 
 **Header:**
 - App wordmark "crongen" in `text-secondary`, 11px, uppercase, letter-spaced.
-- "+ New Agent" button: full-width, `bg-elevated`, `accent` left border (3px).
+- "+ New Project" button: full-width, `bg-elevated`, `accent` left border (3px).
 
-**Agent card:**
+**Project card:**
 
 ```
 ┌────────────────────────────────┐
@@ -169,17 +169,17 @@ The sidebar lists all configured agents. Each agent maps to one git repo and one
 ```
 
 - **Status dot:** `node-running` green if any branch is active, `text-muted` otherwise.
-- **Agent name:** `text-primary`, 13px, semi-bold.
+- **Project name:** `text-primary`, 13px, semi-bold.
 - **Repo path:** `text-secondary`, truncated from the left (`…/myproject`).
 - **Metadata line:** Shell badge, cron expression, timezone.
 - **Branch summary:** "3 branches · 1 running" in `text-muted`. Gives a quick sense of tree size and activity.
 - **Overflow menu** (`⋮`, visible on hover): Edit, Delete, Run Now.
 
-**Selected agent:** `accent` left border (3px), `bg-elevated` background. The canvas shows this agent's decision tree.
+**Selected project:** `accent` left border (3px), `bg-elevated` background. The canvas shows this project's decision tree.
 
 ### 6.2 Toolbar
 
-Horizontal bar between the sidebar and the canvas. Context-sensitive to the selected agent.
+Horizontal bar between the sidebar and the canvas. Context-sensitive to the selected project.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -189,7 +189,7 @@ Horizontal bar between the sidebar and the canvas. Context-sensitive to the sele
 ```
 
 **Left section:**
-- Agent name (`text-primary`, 13px, semi-bold).
+- Project name (`text-primary`, 13px, semi-bold).
 - Repo path (`text-secondary`).
 
 **Right section:**
@@ -200,7 +200,7 @@ Horizontal bar between the sidebar and the canvas. Context-sensitive to the sele
 
 ### 6.3 Canvas — Decision Tree
 
-The canvas is a pannable, zoomable surface rendered with SVG or Canvas2D (implementation detail). It displays the agent's decision tree as a top-down directed graph.
+The canvas is a pannable, zoomable surface rendered with SVG or Canvas2D (implementation detail). It displays the selected project's decision tree as a top-down directed graph.
 
 #### Tree Layout
 
@@ -270,20 +270,20 @@ Edge labels are not needed for v1.0. The prompt on each node provides sufficient
 
 #### Empty State
 
-When an agent has no runs yet:
+When a project has no runs yet:
 
 ```
           ┌─────────────────────────┐
           │     ▶ Start first run   │
           │                         │
-          │  This agent has no      │
+          │  This project has no    │
           │  decision history yet.  │
           │  Run it to create the   │
           │  root node.             │
           └─────────────────────────┘
 ```
 
-Single centered call-to-action node, styled as a dashed-border ghost node. Clicking it triggers `run_task_now`.
+Single centered call-to-action node, styled as a dashed-border ghost node. Clicking it triggers `run_project_now`.
 
 ### 6.4 Terminal Panel
 
@@ -393,13 +393,13 @@ Merging takes a completed branch and integrates it back into the repo's main bra
 - On success: the merged node gets a purple `merge-highlight` border and a merge icon (`🔀`). Sibling branches remain visible but are visually dimmed (30% opacity) to indicate they were not chosen.
 - On conflict: display the conflict output in the terminal panel. The user resolves conflicts using the terminal (interactive PTY in the worktree), then confirms.
 
-### 6.7 Task/Agent Modal
+### 6.7 Project Modal
 
 Same structure as the original TaskModal, with additions for the repo binding.
 
 ```
 ┌──────────────────────────────────────┐
-│  New Agent                        ×  │
+│  New Project                      ×  │
 ├──────────────────────────────────────┤
 │                                      │
 │  Name                                │
@@ -437,19 +437,19 @@ Same structure as the original TaskModal, with additions for the repo binding.
 ```
 
 - **Repository Path:** Text input with a folder-picker button (`📁`). On input, validate that the path is a valid git repository (check for `.git`). Show green checkmark or red error below.
-- **Initial Prompt:** This becomes the root node's prompt when the agent first runs.
+- **Initial Prompt:** This becomes the root node's prompt when the project first runs.
 - All other fields same as the original spec.
 
 ### 6.8 Status Bar
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  ● Scheduler active   2 agents · 5 branches · 1 running   Next: 47m │
+│  ● Scheduler active   2 projects · 5 branches · 1 running   Next: 47m │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 - **Scheduler indicator:** Green/red dot.
-- **Global summary:** Agent count, total branches across all agents, running session count.
+- **Global summary:** Project count, total branches across all projects, running session count.
 - **Next trigger:** Next scheduled cron trigger with countdown.
 
 ### 6.9 Toast Notifications
@@ -466,13 +466,13 @@ Same behavior as the original spec. Additional toast types:
 ## 7. Interaction Patterns
 
 ### 7.1 First Run — Creating the Root Node
-1. User creates an agent (modal), specifying the repo and initial prompt.
+1. User creates a project (modal), specifying the repo and initial prompt.
 2. User clicks "Run Now" from the sidebar (or waits for cron trigger).
 3. Backend runs `git worktree add` from the current HEAD of the main branch, spawns a PTY in that worktree.
 4. The root node appears on the canvas, status `running`. Auto-selects, opening the terminal panel.
 
 ### 7.2 Exploring a Branch — Mid-Run Fork
-1. Agent is running (green pulsing node). User is watching output in the terminal panel.
+1. An agent node is running (green pulsing node). User is watching output in the terminal panel.
 2. User sees the agent going down a wrong path. Clicks `⏸ Pause`.
 3. Node status transitions to `paused` (amber). The PTY session receives `SIGTSTP` (or equivalent).
 4. User clicks "Fork from here." Fork modal opens with the current commit.
@@ -481,7 +481,7 @@ Same behavior as the original spec. Additional toast types:
 7. The original paused node can be resumed later, or left paused.
 
 ### 7.3 Exploring a Branch — Post-Completion Fork
-1. Agent completes (node shows `✓ 0`).
+1. The agent node completes (node shows `✓ 0`).
 2. User reviews the output. Not satisfied.
 3. Clicks "Fork from here." Same flow as above, but the fork point is the completed commit.
 4. User can create multiple forks from the same node, exploring several alternatives in parallel.
@@ -505,7 +505,7 @@ Same behavior as the original spec. Additional toast types:
 
 | Action | Shortcut |
 |---|---|
-| New Agent | `Ctrl/Cmd + N` |
+| New Project | `Ctrl/Cmd + N` |
 | Toggle Sidebar | `Ctrl/Cmd + B` |
 | Close Terminal Panel | `Escape` |
 | Focus Terminal | `Enter` (when node selected) |
@@ -514,7 +514,7 @@ Same behavior as the original spec. Additional toast types:
 | Fit tree to view | `Ctrl/Cmd + 0` |
 | Zoom in/out | `Ctrl/Cmd + =` / `Ctrl/Cmd + -` |
 | Fork selected node | `Ctrl/Cmd + F` |
-| Run agent now | `Ctrl/Cmd + R` |
+| Run project now | `Ctrl/Cmd + R` |
 | Pause/Resume session | `Ctrl/Cmd + P` |
 
 When the terminal panel is focused, all shortcuts except `Escape` and panel-level actions pass through to the PTY.
@@ -562,7 +562,7 @@ This section flags changes to the revised spec (v1.0.0) required to support the 
 ```sql
 CREATE TABLE IF NOT EXISTS decision_nodes (
     id            TEXT PRIMARY KEY,          -- UUID v4
-    agent_id      TEXT NOT NULL REFERENCES scheduled_tasks(id),
+    project_id    TEXT NOT NULL REFERENCES projects(id),
     parent_id     TEXT REFERENCES decision_nodes(id),  -- NULL for root
     label         TEXT NOT NULL,
     prompt        TEXT NOT NULL,
@@ -580,7 +580,7 @@ CREATE TABLE IF NOT EXISTS decision_nodes (
 
 | Command | Description |
 |---|---|
-| `get_decision_tree(agent_id)` | Returns all nodes for an agent as a flat list (frontend builds the tree) |
+| `get_decision_tree(project_id)` | Returns all nodes for a project as a flat list (frontend builds the tree) |
 | `fork_node(node_id, label, prompt, start_immediately)` | Creates worktree, inserts child node, optionally starts session |
 | `pause_session(session_id)` | Sends SIGTSTP to the PTY child process |
 | `resume_session(session_id)` | Sends SIGCONT to the PTY child process |
@@ -589,7 +589,7 @@ CREATE TABLE IF NOT EXISTS decision_nodes (
 
 ### Modified Concepts
 
-- `run_task_now` now creates the **root node** of a decision tree (if none exists) or returns an error if a root already exists and is running.
-- `session_started` event payload adds `node_id` so the frontend can associate the session with a tree node.
+- `run_project_now` now creates the **root node** of a decision tree (if none exists) or returns an error if a root already exists and is running.
+- `session_started` event payload adds `node_id` and `project_id` so the frontend can associate the session with a tree node and project.
 - `PtyManager::spawn_session` now accepts a `worktree_path` as the working directory for the PTY.
-- The `ScheduledTask` (now "Agent") gains a `repo_path: String` field.
+- The persisted top-level model is now `Project`, and it carries the repository binding via `repo_path`.

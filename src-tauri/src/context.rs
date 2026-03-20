@@ -232,7 +232,7 @@ pub fn build_execution_context(
             // Check if this is a subsequent session on a project that was scaffolded previously.
             // If other root sessions already completed, skip scaffolding — treat as existing code.
             let is_subsequent_session = {
-                let roots = db::node_get_roots(conn, &node.agent_id).unwrap_or_default();
+                let roots = db::node_get_roots(conn, &node.project_id).unwrap_or_default();
                 roots.iter().any(|r| {
                     r.id != node.id
                         && (r.status == crate::models::NodeStatus::Completed

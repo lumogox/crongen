@@ -55,3 +55,13 @@ toon-format = "0.4"
 # Utilities
 which = "7"
 dirs = "6"
+
+[profile.dev]
+debug = 0
+codegen-units = 1
+incremental = false
+
+[profile.test]
+debug = 0
+codegen-units = 1
+incremental = false

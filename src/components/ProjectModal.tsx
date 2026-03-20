@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Agent, AgentTypeConfig } from "../types";
+import type { AgentTypeConfig, Project } from "../types";
 import { AGENT_TEMPLATES } from "../lib/agent-templates";
 import {
   Dialog,
@@ -21,9 +21,9 @@ import {
 } from "@/components/ui/field";
 import { FolderOpen, PackagePlus, FolderCode } from "lucide-react";
 
-interface AgentModalProps {
+interface ProjectModalProps {
   mode: "create" | "edit";
-  agent?: Agent;
+  project?: Project;
   onSave: (params: {
     id?: string;
     name: string;
@@ -43,12 +43,12 @@ function defaultConfig(): AgentTypeConfig {
   return structuredClone(AGENT_TEMPLATES[DEFAULT_AGENT_TYPE].defaultConfig);
 }
 
-export function AgentModal({ mode, agent, onSave, onClose }: AgentModalProps) {
-  const [name, setName] = useState(agent?.name ?? "");
-  const [description, setDescription] = useState(agent?.prompt ?? "");
-  const [repoPath, setRepoPath] = useState(agent?.repo_path ?? "");
-  const [projectMode, setProjectMode] = useState<"blank" | "existing">(agent?.project_mode ?? "blank");
-  const [isActive] = useState(agent?.is_active ?? true);
+export function ProjectModal({ mode, project, onSave, onClose }: ProjectModalProps) {
+  const [name, setName] = useState(project?.name ?? "");
+  const [description, setDescription] = useState(project?.prompt ?? "");
+  const [repoPath, setRepoPath] = useState(project?.repo_path ?? "");
+  const [projectMode, setProjectMode] = useState<"blank" | "existing">(project?.project_mode ?? "blank");
+  const [isActive] = useState(project?.is_active ?? true);
 
   async function handleBrowseFolder() {
     try {
@@ -68,12 +68,12 @@ export function AgentModal({ mode, agent, onSave, onClose }: AgentModalProps) {
   function handleSave() {
     if (!canSave) return;
     onSave({
-      id: agent?.id,
+      id: project?.id,
       name: name.trim(),
       prompt: description.trim(),
       repoPath: repoPath.trim(),
-      agentType: agent?.agent_type ?? DEFAULT_AGENT_TYPE,
-      typeConfig: agent?.type_config ?? defaultConfig(),
+      agentType: project?.agent_type ?? DEFAULT_AGENT_TYPE,
+      typeConfig: project?.type_config ?? defaultConfig(),
       isActive,
       projectMode,
     });
