@@ -4,6 +4,8 @@ A cross-platform desktop application for scheduling, orchestrating, and monitori
 
 Built with **Tauri 2.x** (Rust backend + React frontend).
 
+Source: [github.com/lumogox/crongen](https://github.com/lumogox/crongen)
+
 ![Dark theme, JetBrains Mono, visual execution graph]
 
 ---
@@ -32,8 +34,8 @@ Built with **Tauri 2.x** (Rust backend + React frontend).
 - **Decision trees** -- Fork competing approaches at decision points, compare results, merge winners
 - **Auto and supervised modes** -- Fully autonomous execution or pause-at-decision-points for human review
 - **Integrated terminal** -- Live PTY output via xterm.js; pause/resume running agents with SIGSTOP/SIGCONT
-- **AI plan generation** -- Describe a task in plain text and generate a structured execution plan (linear or branching)
-- **Auto-merge with conflict resolution** -- Git merge conflicts are automatically resolved by Claude (configurable model)
+- **Claude-backed plan generation** -- Describe a task in plain text and generate a structured execution plan (linear or branching)
+- **Auto-merge with conflict resolution** -- Git merge conflicts are automatically resolved by Claude CLI using the configured execution model
 - **Ship-it dialog** -- Merge preview with file list, commit count, step-by-step merge progress, and branch creation
 - **TOON context system** -- Token-efficient structured context passed to each agent (ancestors, siblings, diffs)
 - **Session management** -- Multiple sessions per project, each with its own node tree and execution history
@@ -45,7 +47,7 @@ Built with **Tauri 2.x** (Rust backend + React frontend).
 | Agent | Execution Mode | Key Config |
 |-------|---------------|------------|
 | **Claude Code** | SDK (headless JSON stream) | model, max_turns, max_budget_usd, allowed/disallowed tools, skip_permissions |
-| **Codex** | PTY (interactive terminal) | model, approval_mode (full-auto/suggest/auto-edit), sandbox, skip_git_check |
+| **Codex** | PTY (interactive terminal) | model, approval_mode (full-auto/suggest/auto-edit), sandbox, skip_git_check, json_output |
 | **Gemini** | PTY (interactive terminal) | model, sandbox, yolo mode |
 | **Custom** | PTY (interactive terminal) | configurable shell (bash/zsh/pwsh) |
 
@@ -133,7 +135,7 @@ Claude Code runs headless with `--output-format stream-json`, capturing structur
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/crongen.git
+git clone https://github.com/lumogox/crongen.git
 cd crongen
 
 # Install frontend dependencies
@@ -544,30 +546,17 @@ cargo check          # Rust check (from src-tauri/)
 
 ---
 
-## Current Status
+## Implementation Snapshot
 
-**Completed phases:**
-- Phase 1: Scaffold + layout shell
-- Phase 2: Data layer + agent CRUD backend
-- Phase 3: Agent management UI (shadcn migration)
-- Decision canvas with React Flow + dagre auto-layout
-- PTY and SDK session management with live terminal output
-- Git worktree isolation per execution node
-- Orchestrator with auto and supervised modes
-- AI plan generation (linear and branching)
-- Fork, merge, and delete node operations
-- Auto-merge with Claude conflict resolution
-- Merge dialog with preview, progress stepper, and branch creation
-- Settings persistence (debug mode, planning/execution models)
-- Session management with multiple sessions per project
-
-**Architecture highlights:**
-- ~1,500 lines of Tauri command handlers connecting frontend to backend
-- ~800 lines of orchestration logic with event-driven state machine
-- ~550 lines of git operations (worktrees, merge, conflict resolution, preview)
-- ~500 lines of PTY management with stdin injection and auto-responses
-- Self-contained merge dialog with 5-step state machine (preview/merging/success/conflict/error)
-- TOON context system for token-efficient agent communication
+The current codebase includes:
+- Agent CRUD with per-agent config, active state, and project mode persisted in SQLite.
+- React Flow decision trees with dagre auto-layout, drag-to-create structural nodes, and a right-side inspector/terminal panel.
+- PTY sessions with xterm.js rendering, pause/resume support, stdin injection, and auto-response handling for interactive agents.
+- Claude Code SDK sessions with `stream-json` output parsing and a dedicated session viewer.
+- Git worktree isolation, branch naming, merge previews, merge fallback handling, and Claude-backed conflict resolution.
+- Auto and supervised orchestrator modes with decision-point UI and progress events.
+- Claude-backed plan generation for linear and branching execution trees.
+- Settings persistence for debug mode, planning model, and execution model.
 
 ---
 
