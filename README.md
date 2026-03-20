@@ -458,7 +458,6 @@ agent-chron/
 │
 ├── package.json
 ├── vite.config.ts
-├── tailwind.config.ts
 └── tsconfig.json
 ```
 
@@ -574,4 +573,4 @@ cargo check          # Rust check (from src-tauri/)
 
 ## License
 
-[Add license here]
+MIT License. See [LICENSE](LICENSE).
