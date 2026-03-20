@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agentcron",
+      "name": "crongen",
       "dependencies": {
         "@dagrejs/dagre": "^1",
         "@fontsource/jetbrains-mono": "^5.2.8",
