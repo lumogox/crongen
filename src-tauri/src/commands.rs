@@ -345,6 +345,20 @@ fn resolve_planning_agent(settings: &AppSettings) -> Result<AgentType, String> {
     }
 }
 
+fn active_session_backend(
+    pty: &PtyManager,
+    sdk: &SdkManager,
+    session_id: &str,
+) -> Option<&'static str> {
+    if pty.has_session(session_id) {
+        Some("pty")
+    } else if sdk.has_session(session_id) {
+        Some("sdk")
+    } else {
+        None
+    }
+}
+
 // ─── Project CRUD ──────────────────────────────────────────────
 
 #[tauri::command]

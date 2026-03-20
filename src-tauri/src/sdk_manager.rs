@@ -332,4 +332,21 @@ impl SdkManager {
         let sessions = self.sessions.lock().unwrap();
         sessions.values().any(|s| s.project_id == project_id)
     }
+
+    /// Check if a specific SDK session is currently active.
+    pub fn has_session(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.contains_key(session_id)
+    }
+
+    /// Remove buffered output and persisted logs for a session.
+    pub fn clear_session_artifacts(&self, session_id: &str) {
+        {
+            let mut buffers = self.output_buffers.lock().unwrap();
+            buffers.remove(session_id);
+        }
+
+        let log_path = self.logs_dir.join(format!("{}.jsonl", session_id));
+        let _ = std::fs::remove_file(log_path);
+    }
 }

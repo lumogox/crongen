@@ -498,4 +498,29 @@ impl PtyManager {
         let sessions = self.sessions.lock().unwrap();
         sessions.values().any(|s| s.project_id == project_id)
     }
+
+    /// Check if a specific PTY session is currently active.
+    pub fn has_session(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.contains_key(session_id)
+    }
+
+    /// Remove buffered output and persisted logs for a session.
+    pub fn clear_session_artifacts(&self, session_id: &str) {
+        {
+            let mut buffers = self.output_buffers.lock().unwrap();
+            buffers.remove(session_id);
+        }
+
+        let log_path = self.logs_dir.join(format!("{}.log", session_id));
+        let _ = std::fs::remove_file(log_path);
+    }
+
+    /// Publish a synthetic completion event to unblock orchestrator recovery flows.
+    pub fn publish_completion(&self, node_id: &str, exit_code: Option<i32>) {
+        let _ = self.completion_tx.send(SessionCompletion {
+            node_id: node_id.to_string(),
+            exit_code,
+        });
+    }
 }
