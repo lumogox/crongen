@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+bun.lock
+
+# Build output
+dist/
+out/
+*.tgz
+
+# Rust / Tauri
+src-tauri/target/
+
+# Code coverage
+coverage/
+*.lcov
+
+# Logs
+logs/
+*.log
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code (local settings)
+.claude/
+
+# npm lockfile (project uses bun)
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
