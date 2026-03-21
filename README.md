@@ -24,6 +24,7 @@ Source: [github.com/lumogox/crongen](https://github.com/lumogox/crongen)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Development](#development)
+- [Releasing](#releasing)
 
 ---
 
@@ -152,6 +153,8 @@ bun run tauri build
 ```
 
 This produces platform-specific installers in `src-tauri/target/release/bundle/`.
+
+For the automated GitHub Actions release flow, see [docs/releases.md](docs/releases.md).
 
 ---
 
@@ -543,6 +546,14 @@ cargo check          # Rust check (from src-tauri/)
 - Design tokens defined in `src/index.css` `@theme` block
 - Dark theme only -- all UI assumes dark background
 - Monospace font (JetBrains Mono) throughout
+
+## Releasing
+
+- CI runs on every push and pull request through [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+- Cross-platform release builds run through [`.github/workflows/release.yml`](.github/workflows/release.yml).
+- Use `workflow_dispatch` for a build-only dry run.
+- Push a matching `vX.Y.Z` tag to create a draft GitHub Release with macOS DMGs, a Windows NSIS installer, and Linux AppImage plus `.deb` bundles.
+- Full release instructions and signing secrets are documented in [docs/releases.md](docs/releases.md).
 
 ---
 
