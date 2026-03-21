@@ -24,12 +24,12 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
@@ -54,25 +54,33 @@ jobs:
             runner: macos-latest
             args: --target aarch64-apple-darwin --bundles dmg
             rust_target: aarch64-apple-darwin
+            artifact_name: crongen-macos-aarch64-bundle
+            artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle
           - label: macOS Intel
             runner: macos-latest
             args: --target x86_64-apple-darwin --bundles dmg
             rust_target: x86_64-apple-darwin
+            artifact_name: crongen-macos-x64-bundle
+            artifact_path: src-tauri/target/x86_64-apple-darwin/release/bundle
           - label: Windows x64
             runner: windows-latest
             args: --bundles nsis
             rust_target: ""
+            artifact_name: crongen-windows-x64-bundle
+            artifact_path: src-tauri/target/release/bundle
           - label: Linux x64
             runner: ubuntu-22.04
             args: --bundles appimage,deb
             rust_target: ""
+            artifact_name: crongen-linux-x64-bundle
+            artifact_path: src-tauri/target/release/bundle
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@v6.0.2
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: latest
 
@@ -94,7 +102,7 @@ jobs:
           fi
 
       - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        uses: Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "src-tauri -> target"
 
@@ -165,7 +173,7 @@ jobs:
 
       - name: Build release bundles
         if: github.event_name == 'push'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
+        uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -185,13 +193,11 @@ jobs:
           generateReleaseNotes: true
           releaseDraft: true
           prerelease: false
-          uploadUpdaterSignatures: false
+          includeUpdaterJson: false
 
       - name: Build dry-run bundles
         if: github.event_name == 'workflow_dispatch'
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ steps.macos-signing.outputs.identity }}
@@ -201,12 +207,15 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bun run tauri build ${{ matrix.args }}
+
+      - name: Upload dry-run bundles
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7.0.0
         with:
-          tauriScript: bun run tauri
-          args: ${{ matrix.args }}
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: "[name]-[version]-[platform]-[arch]-[bundle]"
-          uploadUpdaterSignatures: false
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
 
       - name: Clean up macOS keychain
         if: always() && runner.os == 'macOS' && steps.macos-signing.outputs.keychain_path != ''
