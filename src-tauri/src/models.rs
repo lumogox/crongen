@@ -32,6 +32,49 @@ impl AgentType {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentProviderStatus {
+    Ready,
+    MissingCli,
+    NeedsLogin,
+    ComingSoon,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentProviderReadiness {
+    pub agent_type: AgentType,
+    pub status: AgentProviderStatus,
+    pub detail: Option<String>,
+    pub ready: bool,
+    pub supports_planning: bool,
+    pub supports_execution: bool,
+    pub coming_soon: bool,
+}
+
+impl AgentProviderReadiness {
+    pub fn new(
+        agent_type: AgentType,
+        status: AgentProviderStatus,
+        detail: Option<String>,
+        supports_planning: bool,
+        supports_execution: bool,
+        coming_soon: bool,
+    ) -> Self {
+        let ready = status == AgentProviderStatus::Ready;
+        Self {
+            agent_type,
+            status,
+            detail,
+            ready,
+            supports_planning,
+            supports_execution,
+            coming_soon,
+        }
+    }
+}
+
 // ─── Agent Type Configs ────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +325,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub debug_mode: bool,
     #[serde(default)]
+    pub agent_setup_seen: bool,
+    #[serde(default)]
+    pub planning_agent: Option<AgentType>,
+    #[serde(default)]
+    pub execution_agent: Option<AgentType>,
+    #[serde(default)]
     pub planning_model: Option<String>,
     #[serde(default)]
     pub execution_model: Option<String>,
@@ -291,10 +340,22 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             debug_mode: false,
+            agent_setup_seen: false,
+            planning_agent: None,
+            execution_agent: None,
             planning_model: None,
             execution_model: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeRuntimeValidation {
+    pub node: DecisionNode,
+    pub session_active: bool,
+    pub session_backend: Option<String>,
+    pub reconciled: bool,
+    pub message: String,
 }
 
 /// Completion event emitted by PTY/SDK managers when a session finishes.

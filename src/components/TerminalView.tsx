@@ -17,8 +17,8 @@ export function TerminalView({ sessionId, status }: TerminalViewProps) {
   const showPlaceholder = !effectiveSessionId;
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-terminal-bg">
-      <div ref={containerRef} className="h-full w-full" />
+    <div className="relative h-full w-full min-w-0 overflow-hidden bg-terminal-bg">
+      <div ref={containerRef} className="h-full w-full min-w-0" />
       {showPlaceholder && (
         <div className="absolute inset-0 flex items-center justify-center">
           <span className="text-[12px] text-text-muted">

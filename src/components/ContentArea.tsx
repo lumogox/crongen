@@ -47,7 +47,10 @@ interface ContentAreaProps {
   onMergeComplete?: () => void;
   currentBranch?: string | null;
   debugMode?: boolean;
+  agentSetupReminder?: string | null;
   onOpenSettings?: () => void;
+  onValidateRuntime?: (nodeId: string) => void;
+  onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
 }
 
@@ -153,7 +156,10 @@ function ContentAreaInner({
   onMergeComplete,
   currentBranch,
   debugMode,
+  agentSetupReminder,
   onOpenSettings,
+  onValidateRuntime,
+  onRetryNode,
   onResetNode,
 }: ContentAreaProps) {
   const selectedNode = selectedNodeId
@@ -408,6 +414,23 @@ function ContentAreaInner({
         </div>
       </header>
 
+      {agentSetupReminder && onOpenSettings && (
+        <div className="flex items-center justify-between gap-3 rounded-[1.35rem] border border-amber-400/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(15,23,42,0.35))] px-4 py-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-amber-200/80">Agent Bay</div>
+            <div className="mt-1 text-sm text-amber-50">{agentSetupReminder}</div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={onOpenSettings}
+            className="rounded-full border-amber-300/20 bg-black/20 text-amber-50 hover:bg-black/30"
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Open setup
+          </Button>
+        </div>
+      )}
+
       {/* 3-column layout with drag-to-resize handles */}
       <div className="flex min-h-0 flex-1 gap-0 overflow-hidden">
         {/* Sidebar */}
@@ -478,9 +501,12 @@ function ContentAreaInner({
         <aside style={{ width: inspector.size, minWidth: inspector.size }} className="shrink-0 min-h-0 overflow-hidden">
           {showOrchestratorActivity && selectedProject ? (
             <OrchestratorActivity
+              agentType={selectedProject.agent_type}
               treeNodes={treeNodes}
               orchestratorStatus={orchestratorStatus}
               onSelectNode={(id) => onSelectNode(id)}
+              onValidateRuntime={onValidateRuntime}
+              onResumeNode={onResumeNode}
             />
           ) : selectedNode && selectedProject ? (
             <InspectorPanel
@@ -496,6 +522,9 @@ function ContentAreaInner({
               onDelete={onDeleteNode}
               onRunNode={onRunNode}
               onUpdateNode={onUpdateNode}
+              onValidateRuntime={onValidateRuntime}
+              onRetryNode={onRetryNode}
+              onResetNode={onResetNode}
             />
           ) : debugMode && treeNodes.length > 0 ? (
             <ToonViewer nodes={treeNodes} />

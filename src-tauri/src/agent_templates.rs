@@ -44,10 +44,10 @@ pub fn build_shell_command(
             build_claude_code_command(&effective_prompt, cfg, default_model)
         }
         (AgentType::Codex, AgentTypeConfig::Codex(cfg)) => {
-            ExecutionMode::Pty(build_codex_command(&effective_prompt, cfg))
+            ExecutionMode::Pty(build_codex_command(&effective_prompt, cfg, default_model))
         }
         (AgentType::Gemini, AgentTypeConfig::Gemini(cfg)) => {
-            ExecutionMode::Pty(build_gemini_command(&effective_prompt, cfg))
+            ExecutionMode::Pty(build_gemini_command(&effective_prompt, cfg, default_model))
         }
         (AgentType::Custom, AgentTypeConfig::Custom(cfg)) => {
             ExecutionMode::Pty(build_custom_command(&effective_prompt, cfg))
@@ -121,7 +121,11 @@ fn build_claude_code_command(
     })
 }
 
-fn build_codex_command(prompt: &str, cfg: &CodexConfig) -> ShellExecution {
+fn build_codex_command(
+    prompt: &str,
+    cfg: &CodexConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
     let mut args = Vec::new();
 
     // Interactive mode: auto-approve flag so the agent doesn't block on confirmations
@@ -129,9 +133,9 @@ fn build_codex_command(prompt: &str, cfg: &CodexConfig) -> ShellExecution {
     args.push(format!("--{approval}"));
 
     // Optional flags
-    if let Some(ref model) = cfg.model {
+    if let Some(model) = cfg.model.as_deref().or(default_model) {
         args.push("--model".to_string());
-        args.push(model.clone());
+        args.push(model.to_string());
     }
 
     if let Some(ref sandbox) = cfg.sandbox {
@@ -155,7 +159,11 @@ fn build_codex_command(prompt: &str, cfg: &CodexConfig) -> ShellExecution {
     }
 }
 
-fn build_gemini_command(prompt: &str, cfg: &GeminiConfig) -> ShellExecution {
+fn build_gemini_command(
+    prompt: &str,
+    cfg: &GeminiConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
     let mut args = Vec::new();
 
     // Interactive mode: auto-approve flag so the agent doesn't block on confirmations
@@ -163,9 +171,9 @@ fn build_gemini_command(prompt: &str, cfg: &GeminiConfig) -> ShellExecution {
         args.push("--yolo".to_string());
     }
 
-    if let Some(ref model) = cfg.model {
+    if let Some(model) = cfg.model.as_deref().or(default_model) {
         args.push("--model".to_string());
-        args.push(model.clone());
+        args.push(model.to_string());
     }
 
     if let Some(ref sandbox) = cfg.sandbox {

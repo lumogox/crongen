@@ -1,5 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentTypeConfig, AppSettings, DecisionNode, MergeResult, OrchestratorStatus, Project } from "../types";
+import type {
+  AgentProviderReadiness,
+  AgentTypeConfig,
+  AppSettings,
+  DecisionNode,
+  MergeResult,
+  NodeRuntimeValidation,
+  OrchestratorStatus,
+  Project,
+} from "../types";
 
 // ─── Project CRUD ──────────────────────────────────────────────
 
@@ -185,6 +194,10 @@ export async function checkEnvVar(name: string): Promise<boolean> {
   return invoke("check_env_var", { name });
 }
 
+export async function getAgentProviderStatuses(): Promise<AgentProviderReadiness[]> {
+  return invoke("get_agent_provider_statuses");
+}
+
 // ─── Orchestrator ─────────────────────────────────────────────
 
 export async function startOrchestrator(
@@ -225,6 +238,12 @@ export async function updateSettings(settings: AppSettings): Promise<void> {
 
 export async function resetNodeStatus(nodeId: string): Promise<DecisionNode> {
   return invoke("reset_node_status", { nodeId });
+}
+
+export async function validateNodeRuntime(
+  nodeId: string,
+): Promise<NodeRuntimeValidation> {
+  return invoke("validate_node_runtime", { nodeId });
 }
 
 // ─── Merge Preview ────────────────────────────────────────────

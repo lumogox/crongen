@@ -1,8 +1,10 @@
+use std::{fs, path::PathBuf};
+
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 use crate::db;
-use crate::models::{DecisionNode, NodeStatus};
+use crate::models::{AgentType, DecisionNode, NodeStatus};
 
 // ─── Plan Types ─────────────────────────────────────────────────
 
@@ -88,6 +90,96 @@ LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo", "Dark
 Example for user task "Add undo/redo to the calculator":
 {"root":{"label":"Undo/Redo","prompt":"Read the project structure and understand how state is managed. Do NOT scaffold.","node_type":"task","children":[{"label":"Implement Undo/Redo","prompt":"Add undo/redo using a history stack, with Ctrl+Z/Ctrl+Y keyboard shortcuts.","node_type":"agent","children":[]}]}}"#;
 
+#[derive(Debug, Clone)]
+struct PlannerInvocation {
+    program: String,
+    args: Vec<String>,
+    current_dir: PathBuf,
+    output_file: Option<PathBuf>,
+}
+
+fn planner_provider_name(provider: &AgentType) -> &'static str {
+    match provider {
+        AgentType::ClaudeCode => "Claude",
+        AgentType::Codex => "Codex",
+        AgentType::Gemini => "Gemini",
+        AgentType::Custom => "Custom provider",
+    }
+}
+
+fn cleanup_output_file(output_file: Option<&PathBuf>) {
+    if let Some(file) = output_file {
+        let _ = fs::remove_file(file);
+    }
+}
+
+fn planner_system_prompt(project_mode: &str, complexity: &str) -> &'static str {
+    match (complexity, project_mode) {
+        ("linear", "existing") => PLAN_LINEAR_EXISTING_PROMPT,
+        ("linear", _) => PLAN_LINEAR_PROMPT,
+        (_, "existing") => PLAN_SYSTEM_PROMPT_EXISTING,
+        _ => PLAN_SYSTEM_PROMPT,
+    }
+}
+
+fn build_planner_invocation(
+    provider: &AgentType,
+    full_prompt: &str,
+    model: Option<&str>,
+    repo_path: &str,
+) -> Result<PlannerInvocation, String> {
+    match provider {
+        AgentType::ClaudeCode => {
+            let mut args = vec![
+                "-p".to_string(),
+                full_prompt.to_string(),
+                "--output-format".to_string(),
+                "text".to_string(),
+                "--dangerously-skip-permissions".to_string(),
+            ];
+            if let Some(m) = model {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+
+            Ok(PlannerInvocation {
+                program: "claude".to_string(),
+                args,
+                current_dir: PathBuf::from(repo_path),
+                output_file: None,
+            })
+        }
+        AgentType::Codex => {
+            let output_file =
+                std::env::temp_dir().join(format!("crongen-plan-{}.txt", uuid::Uuid::new_v4()));
+            let mut args = vec![
+                "exec".to_string(),
+                "--skip-git-repo-check".to_string(),
+                "--sandbox".to_string(),
+                "read-only".to_string(),
+                "--output-last-message".to_string(),
+                output_file.display().to_string(),
+                "--cd".to_string(),
+                repo_path.to_string(),
+            ];
+            if let Some(m) = model {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+            args.push(full_prompt.to_string());
+
+            Ok(PlannerInvocation {
+                program: "codex".to_string(),
+                args,
+                current_dir: PathBuf::from(repo_path),
+                output_file: Some(output_file),
+            })
+        }
+        AgentType::Gemini => Err("Gemini planning is coming soon.".to_string()),
+        AgentType::Custom => Err("Custom providers are not supported for planning.".to_string()),
+    }
+}
+
 // ─── Key Normalization ──────────────────────────────────────────
 
 /// Recursively lowercase all object keys in a JSON value.
@@ -146,47 +238,52 @@ fn extract_json_object(text: &str) -> Option<&str> {
 
 // ─── Generator ──────────────────────────────────────────────────
 
-/// Generate an execution plan by invoking Claude CLI.
+/// Generate an execution plan by invoking the selected provider CLI.
 /// Returns a parsed plan tree that can be converted to DecisionNodes.
 pub async fn generate_plan(
+    provider: &AgentType,
     prompt: &str,
     project_mode: &str,
     model: Option<&str>,
     complexity: &str,
+    repo_path: &str,
 ) -> Result<GeneratedPlan, String> {
-    let system_prompt = match (complexity, project_mode) {
-        ("linear", "existing") => PLAN_LINEAR_EXISTING_PROMPT,
-        ("linear", _) => PLAN_LINEAR_PROMPT,
-        (_, "existing") => PLAN_SYSTEM_PROMPT_EXISTING,
-        _ => PLAN_SYSTEM_PROMPT,
-    };
+    let system_prompt = planner_system_prompt(project_mode, complexity);
     let full_prompt = format!("{system_prompt}\n\nUser task: {prompt}");
+    let invocation = build_planner_invocation(provider, &full_prompt, model, repo_path)?;
 
-    let mut args = vec![
-        "-p".to_string(),
-        full_prompt,
-        "--output-format".to_string(),
-        "text".to_string(),
-        "--dangerously-skip-permissions".to_string(),
-    ];
-
-    if let Some(m) = model {
-        args.push("--model".to_string());
-        args.push(m.to_string());
-    }
-
-    let output = Command::new("claude")
-        .args(&args)
+    let output = Command::new(&invocation.program)
+        .args(&invocation.args)
+        .current_dir(&invocation.current_dir)
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn claude: {e}"))?;
+        .map_err(|e| format!("Failed to spawn {}: {e}", invocation.program))?;
 
     if !output.status.success() {
+        cleanup_output_file(invocation.output_file.as_ref());
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Claude exited with error: {stderr}"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let details = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
+        return Err(format!(
+            "{} exited with error: {details}",
+            planner_provider_name(provider)
+        ));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let raw_output = if let Some(output_file) = &invocation.output_file {
+        let contents = fs::read_to_string(output_file)
+            .map_err(|e| format!("Failed to read planner output: {e}"));
+        cleanup_output_file(Some(output_file));
+        let contents = contents?;
+        contents
+    } else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+    let stdout = raw_output.as_str();
 
     // Strategy 1: Extract outermost JSON object using brace counting.
     // This handles markdown fences, preamble text, trailing commentary, etc.
@@ -243,14 +340,15 @@ pub async fn generate_plan(
     let has_open_brace = stdout.contains('{');
     if has_open_brace && extract_json_object(&stdout).is_none() {
         return Err(
-            "Claude's response was truncated — the JSON tree is incomplete. \
+            "The planner response was truncated — the JSON tree is incomplete. \
              Try simplifying the task or breaking it into smaller pieces."
                 .to_string(),
         );
     }
 
     Err(format!(
-        "Failed to parse plan from Claude output: {}",
+        "Failed to parse plan from {} output: {}",
+        planner_provider_name(provider),
         &stdout[..stdout.len().min(500)]
     ))
 }
@@ -295,4 +393,53 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode
 
     visit(&plan.root, project_id, None, now, &mut nodes);
     nodes
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::{build_planner_invocation, cleanup_output_file};
+    use crate::models::AgentType;
+
+    #[test]
+    fn planner_dispatch_builds_claude_invocation() {
+        let invocation = build_planner_invocation(
+            &AgentType::ClaudeCode,
+            "Plan this task",
+            Some("sonnet"),
+            "/tmp",
+        )
+        .expect("claude invocation");
+
+        assert_eq!(invocation.program, "claude");
+        assert!(invocation.args.iter().any(|arg| arg == "--model"));
+        assert!(invocation.output_file.is_none());
+    }
+
+    #[test]
+    fn planner_dispatch_builds_codex_invocation() {
+        let invocation =
+            build_planner_invocation(&AgentType::Codex, "Plan this task", Some("gpt-5"), "/tmp")
+                .expect("codex invocation");
+
+        assert_eq!(invocation.program, "codex");
+        assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-last-message"));
+        assert!(invocation.output_file.is_some());
+    }
+
+    #[test]
+    fn cleanup_output_file_removes_temp_file() {
+        let file =
+            std::env::temp_dir().join(format!("crongen-plan-test-{}.txt", uuid::Uuid::new_v4()));
+        fs::write(&file, "plan").expect("write temp file");
+
+        cleanup_output_file(Some(&file));
+
+        assert!(!file.exists());
+    }
 }

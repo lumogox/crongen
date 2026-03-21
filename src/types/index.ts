@@ -1,6 +1,8 @@
 // ─── Project / Runtime Agent Types ─────────────────────────────
 
 export type AgentType = "claude_code" | "codex" | "gemini" | "custom";
+export type AgentRole = "planning" | "execution";
+export type AgentProviderStatus = "ready" | "missing_cli" | "needs_login" | "coming_soon" | "error";
 
 export interface ClaudeCodeConfig {
   type: "claude_code";
@@ -50,6 +52,16 @@ export interface Project {
   updated_at: number;
 }
 
+export interface AgentProviderReadiness {
+  agent_type: AgentType;
+  status: AgentProviderStatus;
+  detail?: string | null;
+  ready: boolean;
+  supports_planning: boolean;
+  supports_execution: boolean;
+  coming_soon: boolean;
+}
+
 // ─── Decision Node ─────────────────────────────────────────────
 
 export type NodeStatus =
@@ -75,6 +87,14 @@ export interface DecisionNode {
   scheduled_at: string | null; // ISO 8601 — only meaningful on root (session) nodes
   created_at: number;
   updated_at: number;
+}
+
+export interface NodeRuntimeValidation {
+  node: DecisionNode;
+  session_active: boolean;
+  session_backend?: string | null;
+  reconciled: boolean;
+  message: string;
 }
 
 // ─── Git Operations ───────────────────────────────────────────
@@ -140,6 +160,9 @@ export interface DecisionOption {
 
 export interface AppSettings {
   debug_mode: boolean;
+  agent_setup_seen?: boolean;
+  planning_agent?: AgentType | null;
+  execution_agent?: AgentType | null;
   planning_model?: string | null;
   execution_model?: string | null;
 }
@@ -155,5 +178,5 @@ export type ModalType =
   | { kind: "delete_node"; node: DecisionNode }
   | { kind: "create_session" }
   | { kind: "orchestrator_decision"; sessionId: string; decision: PendingDecision }
-  | { kind: "settings" }
+  | { kind: "settings"; forceSetup?: boolean; onboarding?: boolean; focusRole?: AgentRole }
   | null;

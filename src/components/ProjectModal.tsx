@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { AgentTypeConfig, Project } from "../types";
-import { AGENT_TEMPLATES } from "../lib/agent-templates";
+import type { AgentType, AgentTypeConfig, Project } from "../types";
+import { AGENT_TEMPLATES, getAgentLabel } from "../lib/agent-templates";
 import {
   Dialog,
   DialogClose,
@@ -19,11 +19,12 @@ import {
   FieldLabel,
   FieldError,
 } from "@/components/ui/field";
-import { FolderOpen, PackagePlus, FolderCode } from "lucide-react";
+import { FolderOpen, PackagePlus, FolderCode, Bot, Sparkles, BrainCircuit } from "lucide-react";
 
 interface ProjectModalProps {
   mode: "create" | "edit";
   project?: Project;
+  defaultExecutionAgent: AgentType | null | undefined;
   onSave: (params: {
     id?: string;
     name: string;
@@ -38,17 +39,30 @@ interface ProjectModalProps {
 }
 
 const DEFAULT_AGENT_TYPE = "claude_code";
+type ProjectAgentChoice = "default" | "claude_code" | "codex";
 
 function defaultConfig(): AgentTypeConfig {
   return structuredClone(AGENT_TEMPLATES[DEFAULT_AGENT_TYPE].defaultConfig);
 }
 
-export function ProjectModal({ mode, project, onSave, onClose }: ProjectModalProps) {
+function resolveInitialAgentChoice(
+  project: Project | undefined,
+  _defaultExecutionAgent: AgentType | null | undefined,
+): ProjectAgentChoice {
+  if (!project) return "default";
+  if (project.agent_type === "codex") return "codex";
+  return "claude_code";
+}
+
+export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onClose }: ProjectModalProps) {
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.prompt ?? "");
   const [repoPath, setRepoPath] = useState(project?.repo_path ?? "");
   const [projectMode, setProjectMode] = useState<"blank" | "existing">(project?.project_mode ?? "blank");
   const [isActive] = useState(project?.is_active ?? true);
+  const [agentChoice, setAgentChoice] = useState<ProjectAgentChoice>(
+    resolveInitialAgentChoice(project, defaultExecutionAgent),
+  );
 
   async function handleBrowseFolder() {
     try {
@@ -63,17 +77,29 @@ export function ProjectModal({ mode, project, onSave, onClose }: ProjectModalPro
   const errors: Record<string, string> = {};
   if (!name.trim()) errors.name = "Name is required";
   if (!repoPath.trim()) errors.repoPath = "Project folder is required";
+  const resolvedAgentType =
+    agentChoice === "default"
+      ? defaultExecutionAgent ?? null
+      : agentChoice;
+  if (!resolvedAgentType) {
+    errors.agentType = "Choose Claude Code, Codex, or configure a default execution agent in Agent Bay";
+  }
   const canSave = Object.keys(errors).length === 0;
 
   function handleSave() {
-    if (!canSave) return;
+    if (!canSave || !resolvedAgentType) return;
+    const nextConfig =
+      project?.agent_type === resolvedAgentType
+        ? project.type_config
+        : structuredClone(AGENT_TEMPLATES[resolvedAgentType].defaultConfig);
+
     onSave({
       id: project?.id,
       name: name.trim(),
       prompt: description.trim(),
       repoPath: repoPath.trim(),
-      agentType: project?.agent_type ?? DEFAULT_AGENT_TYPE,
-      typeConfig: project?.type_config ?? defaultConfig(),
+      agentType: resolvedAgentType,
+      typeConfig: nextConfig ?? defaultConfig(),
       isActive,
       projectMode,
     });
@@ -164,6 +190,70 @@ export function ProjectModal({ mode, project, onSave, onClose }: ProjectModalPro
                 </div>
               </button>
             </div>
+          </Field>
+
+          <Field data-invalid={!!errors.agentType || undefined}>
+            <FieldLabel>Execution agent</FieldLabel>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() => setAgentChoice("default")}
+                className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-all ${
+                  agentChoice === "default"
+                    ? "border-sky-400/40 bg-sky-500/10 ring-1 ring-sky-400/30"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <Sparkles className="h-4 w-4 shrink-0 text-sky-300" />
+                  <div>
+                    <div className="text-sm font-medium text-slate-100">
+                      Default ({defaultExecutionAgent ? getAgentLabel(defaultExecutionAgent) : "Not configured"})
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Copy the current Agent Bay execution default into this project
+                    </div>
+                  </div>
+                </div>
+                <span className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-400">
+                  Inherit once
+                </span>
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAgentChoice("claude_code")}
+                  className={`flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all ${
+                    agentChoice === "claude_code"
+                      ? "border-violet-400/40 bg-violet-500/10 ring-1 ring-violet-400/30"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <BrainCircuit className="h-4 w-4 shrink-0 text-violet-300" />
+                  <div>
+                    <div className="text-sm font-medium text-slate-100">Claude Code</div>
+                    <div className="text-[11px] text-slate-500">SDK-backed execution</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgentChoice("codex")}
+                  className={`flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all ${
+                    agentChoice === "codex"
+                      ? "border-emerald-400/40 bg-emerald-500/10 ring-1 ring-emerald-400/30"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <Bot className="h-4 w-4 shrink-0 text-emerald-300" />
+                  <div>
+                    <div className="text-sm font-medium text-slate-100">Codex</div>
+                    <div className="text-[11px] text-slate-500">Interactive terminal agent</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <FieldError>{errors.agentType}</FieldError>
           </Field>
 
           <Field>

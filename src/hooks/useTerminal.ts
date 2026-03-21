@@ -65,13 +65,27 @@ export function useTerminal({
     term.loadAddon(fitAddon);
     term.open(container);
 
-    // Initial fit after DOM paint
-    requestAnimationFrame(() => fitAddon.fit());
+    const sid = sessionId;
+    const syncSize = () => {
+      if (disposed || container.clientWidth === 0 || container.clientHeight === 0) {
+        return;
+      }
+      fitAddon.fit();
+      resizePty(sid, term.rows, term.cols).catch(() => {});
+    };
 
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    const sid = sessionId;
+    // Initial fits after layout settles and fonts load. Without these extra
+    // passes, the PTY can keep a tiny stale column count and wrap output into
+    // unreadable vertical strips inside resizable panels.
+    requestAnimationFrame(syncSize);
+    const settleTimer = window.setTimeout(syncSize, 120);
+    const lateTimer = window.setTimeout(syncSize, 360);
+    document.fonts?.ready.then(() => {
+      syncSize();
+    }).catch(() => {});
 
     // ─── Output pipeline: buffer first, then live events ─────
     // Fetch buffered output, write it, THEN register the live listener.
@@ -81,6 +95,7 @@ export function useTerminal({
         if (disposed) return;
         if (buffered) {
           term.write(base64ToBytes(buffered));
+          requestAnimationFrame(syncSize);
         }
       })
       .catch(() => {})
@@ -107,16 +122,15 @@ export function useTerminal({
 
     // ─── Resize observer ────────────────────────────────────
     const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        fitAddon.fit();
-        resizePty(sid, term.rows, term.cols).catch(() => {});
-      });
+      requestAnimationFrame(syncSize);
     });
     observer.observe(container);
 
     // ─── Cleanup ────────────────────────────────────────────
     return () => {
       disposed = true;
+      window.clearTimeout(settleTimer);
+      window.clearTimeout(lateTimer);
       observer.disconnect();
       dataDisposable.dispose();
       if (unlistenFn) unlistenFn();

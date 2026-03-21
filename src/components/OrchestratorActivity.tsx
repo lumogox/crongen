@@ -1,7 +1,18 @@
 import { useEffect, useState } from "react";
-import { Circle, CheckCircle2, XCircle, Loader2, Pause, Clock } from "lucide-react";
-import type { DecisionNode, OrchestratorStatus } from "../types";
+import {
+  Circle,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Pause,
+  Clock,
+  Play,
+  RefreshCw,
+} from "lucide-react";
+import type { AgentType, DecisionNode, OrchestratorStatus } from "../types";
 import { SdkSessionView } from "./SdkSessionView";
+import { TerminalView } from "./TerminalView";
+import { Button } from "./ui/button";
 
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -23,9 +34,12 @@ function useLiveClock(hasRunning: boolean): number {
 }
 
 interface OrchestratorActivityProps {
+  agentType: AgentType;
   treeNodes: DecisionNode[];
   orchestratorStatus: OrchestratorStatus;
   onSelectNode: (id: string) => void;
+  onValidateRuntime?: (nodeId: string) => void;
+  onResumeNode?: (nodeId: string) => void;
 }
 
 const statusIcon: Record<string, React.ReactNode> = {
@@ -47,9 +61,12 @@ const statusColor: Record<string, string> = {
 };
 
 export function OrchestratorActivity({
+  agentType,
   treeNodes,
   orchestratorStatus,
   onSelectNode,
+  onValidateRuntime,
+  onResumeNode,
 }: OrchestratorActivityProps) {
   // Auto-follow the currently running node
   const [viewingNodeId, setViewingNodeId] = useState<string | null>(
@@ -78,6 +95,9 @@ export function OrchestratorActivity({
   const progress = orchestratorStatus.total_count > 0
     ? Math.round((orchestratorStatus.completed_count / orchestratorStatus.total_count) * 100)
     : 0;
+
+  const canValidate = viewingNode?.status === "running" || viewingNode?.status === "paused";
+  const canContinue = viewingNode?.status === "paused";
 
   return (
     <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] shadow-xl overflow-hidden">
@@ -156,9 +176,9 @@ export function OrchestratorActivity({
       </div>
 
       {/* Terminal output for the selected/current node */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {viewingNode ? (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-w-0 flex-col">
             <div className="flex items-center gap-2 border-b border-white/10 px-5 py-2">
               <div className="size-2 rounded-full bg-amber-400 animate-pulse" style={{
                 animationPlayState: viewingNode.status === "running" ? "running" : "paused",
@@ -174,8 +194,42 @@ export function OrchestratorActivity({
                 {viewingNode.id.slice(0, 8)}
               </span>
             </div>
-            <div className="flex-1 min-h-0">
-              <SdkSessionView sessionId={viewingNode.id} status={viewingNode.status} />
+            <div className="border-b border-white/10 bg-black/10 px-5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {canValidate && onValidateRuntime && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onValidateRuntime(viewingNode.id)}
+                    className="rounded-2xl border-amber-400/20 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20"
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Validate state
+                  </Button>
+                )}
+                {canContinue && onResumeNode && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onResumeNode(viewingNode.id)}
+                    className="rounded-2xl border-sky-400/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
+                  >
+                    <Play className="mr-2 h-4 w-4" />
+                    Continue session
+                  </Button>
+                )}
+              </div>
+              {(viewingNode.status === "running" || viewingNode.status === "paused") && (
+                <div className="mt-2 text-[11px] leading-5 text-slate-400">
+                  If this looks stuck, validate the runtime state. CronGen will detect whether the
+                  agent is still alive and recover the node if the session disappeared.
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 min-w-0">
+              {agentType === "claude_code" ? (
+                <SdkSessionView sessionId={viewingNode.id} status={viewingNode.status} />
+              ) : (
+                <TerminalView sessionId={viewingNode.id} status={viewingNode.status} />
+              )}
             </div>
           </div>
         ) : (

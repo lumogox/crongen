@@ -79,6 +79,7 @@ pub fn run() {
             // Utility
             commands::check_executable,
             commands::check_env_var,
+            commands::get_agent_provider_statuses,
             // PTY
             commands::write_pty,
             commands::resize_pty,
@@ -97,6 +98,7 @@ pub fn run() {
             // Settings
             commands::get_settings,
             commands::update_settings,
+            commands::validate_node_runtime,
             commands::reset_node_status,
             // Git branch operations
             commands::get_repo_branch,
