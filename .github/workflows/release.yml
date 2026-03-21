@@ -153,6 +153,14 @@ jobs:
             echo "keychain_path=" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify macOS signing identity
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Using signing identity: ${{ steps.macos-signing.outputs.identity }}"
+          security find-identity -v -p codesigning || true
+
       - name: Prepare App Store Connect credentials
         if: runner.os == 'macOS'
         id: macos-notarization
@@ -176,8 +184,6 @@ jobs:
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ steps.macos-signing.outputs.identity }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -198,8 +204,6 @@ jobs:
       - name: Build dry-run bundles
         if: github.event_name == 'workflow_dispatch'
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ steps.macos-signing.outputs.identity }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}

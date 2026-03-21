@@ -36,10 +36,12 @@ If no Apple signing secrets are configured, the workflow falls back to ad-hoc si
 
 To enable full macOS signing in CI, configure:
 
-- `APPLE_CERTIFICATE`: base64-encoded `.p12` signing certificate
+- `APPLE_CERTIFICATE`: single-line base64-encoded `.p12` signing certificate
 - `APPLE_CERTIFICATE_PASSWORD`: password for the `.p12`
 - `KEYCHAIN_PASSWORD`: temporary CI keychain password
 - `APPLE_SIGNING_IDENTITY`: optional explicit identity name; if omitted, the workflow auto-detects the first suitable identity from the imported certificate
+
+The workflow imports the certificate into a temporary runner keychain first and then lets Tauri sign by identity. It intentionally does not pass `APPLE_CERTIFICATE` to the Tauri build step, which avoids a second certificate import during bundling.
 
 For notarization, configure one of these sets:
 
