@@ -1,0 +1,4 @@
+[build]
+# Keep Rust builds single-threaded in this repo to avoid macOS killing
+# parallel rustc jobs under memory pressure during dependency compilation.
+jobs = 1

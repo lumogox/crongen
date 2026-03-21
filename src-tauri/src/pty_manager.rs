@@ -21,7 +21,7 @@ use crate::models::NodeStatus;
 pub struct SessionStartedPayload {
     pub session_id: String,
     pub node_id: String,
-    pub agent_id: String,
+    pub project_id: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -44,7 +44,7 @@ struct ActiveSession {
     master: Box<dyn portable_pty::MasterPty + Send>,
     #[allow(dead_code)]
     process_id: Option<u32>,
-    agent_id: String,
+    project_id: String,
     #[allow(dead_code)]
     node_id: String,
 }
@@ -79,7 +79,7 @@ impl PtyManager {
         self.completion_tx.subscribe()
     }
 
-    /// Spawn a new PTY session for an agent run.
+    /// Spawn a new PTY session for a project-scoped node run.
     ///
     /// Uses the node ID as session ID (1:1 mapping between nodes and PTY sessions).
     /// The process runs in the specified working directory (worktree path).
@@ -88,7 +88,7 @@ impl PtyManager {
     pub fn spawn_session(
         &self,
         session_id: &str,
-        agent_id: &str,
+        project_id: &str,
         node_id: &str,
         program: &str,
         args: &[String],
@@ -190,7 +190,7 @@ impl PtyManager {
                     writer,
                     master: pair.master,
                     process_id,
-                    agent_id: agent_id.to_string(),
+                    project_id: project_id.to_string(),
                     node_id: node_id.to_string(),
                 },
             );
@@ -211,7 +211,7 @@ impl PtyManager {
             SessionStartedPayload {
                 session_id: session_id.to_string(),
                 node_id: node_id.to_string(),
-                agent_id: agent_id.to_string(),
+                project_id: project_id.to_string(),
             },
         );
 
@@ -493,9 +493,9 @@ impl PtyManager {
             .map(|b| BASE64_STANDARD.encode(&b))
     }
 
-    /// Check if an agent has any active PTY sessions.
-    pub fn has_active_for_agent(&self, agent_id: &str) -> bool {
+    /// Check if a project has any active PTY sessions.
+    pub fn has_active_for_project(&self, project_id: &str) -> bool {
         let sessions = self.sessions.lock().unwrap();
-        sessions.values().any(|s| s.agent_id == agent_id)
+        sessions.values().any(|s| s.project_id == project_id)
     }
 }

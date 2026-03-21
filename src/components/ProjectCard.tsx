@@ -1,25 +1,25 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronRight } from "lucide-react";
-import type { Agent } from "../types";
+import type { Project } from "../types";
 import { formatRelativeTime } from "../lib/utils";
 
-interface AgentCardProps {
-  agent: Agent;
+interface ProjectCardProps {
+  project: Project;
   isSelected: boolean;
   onSelect: (id: string) => void;
-  onEdit: (agent: Agent) => void;
-  onDelete: (agent: Agent) => void;
+  onEdit: (project: Project) => void;
+  onDelete: (project: Project) => void;
   onRunNow: (id: string) => void;
 }
 
-export function AgentCard({
-  agent,
+export function ProjectCard({
+  project,
   isSelected,
   onSelect,
   onEdit,
   onDelete,
   onRunNow,
-}: AgentCardProps) {
+}: ProjectCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -42,7 +42,7 @@ export function AgentCard({
             ? "border-sky-400/30 bg-sky-500/10"
             : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"
         }`}
-        onClick={() => onSelect(agent.id)}
+        onClick={() => onSelect(project.id)}
         onContextMenu={(e) => {
           e.preventDefault();
           setMenuOpen(true);
@@ -51,14 +51,14 @@ export function AgentCard({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-medium text-slate-100 truncate">
-              {agent.name}
+              {project.name}
             </div>
             <div className="mt-1 text-xs text-slate-500">
-              {agent.agent_type === "claude_code"
+              {project.agent_type === "claude_code"
                 ? "Claude Code"
-                : agent.agent_type === "codex"
+                : project.agent_type === "codex"
                   ? "Codex"
-                  : agent.agent_type === "gemini"
+                  : project.agent_type === "gemini"
                     ? "Gemini"
                     : "Custom"}
             </div>
@@ -66,7 +66,7 @@ export function AgentCard({
           <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
         </div>
         <div className="mt-3 text-xs text-slate-500">
-          {formatRelativeTime(agent.updated_at)}
+          {formatRelativeTime(project.updated_at)}
         </div>
       </button>
 
@@ -79,7 +79,7 @@ export function AgentCard({
           <MenuButton
             onClick={() => {
               setMenuOpen(false);
-              onEdit(agent);
+              onEdit(project);
             }}
           >
             Edit
@@ -87,7 +87,7 @@ export function AgentCard({
           <MenuButton
             onClick={() => {
               setMenuOpen(false);
-              onRunNow(agent.id);
+              onRunNow(project.id);
             }}
           >
             Run Now
@@ -97,7 +97,7 @@ export function AgentCard({
             danger
             onClick={() => {
               setMenuOpen(false);
-              onDelete(agent);
+              onDelete(project);
             }}
           >
             Delete

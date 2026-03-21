@@ -1,5 +1,4 @@
-// ─── Project / Agent Types ──────────────────────────────────────
-// Backend uses "Agent" internally; frontend displays "Project"
+// ─── Project / Runtime Agent Types ─────────────────────────────
 
 export type AgentType = "claude_code" | "codex" | "gemini" | "custom";
 
@@ -37,7 +36,7 @@ export interface CustomConfig {
 
 export type AgentTypeConfig = ClaudeCodeConfig | CodexConfig | GeminiConfig | CustomConfig;
 
-export interface Agent {
+export interface Project {
   id: string;
   name: string;
   prompt: string;         // Used as "description" in the UI
@@ -63,7 +62,7 @@ export type NodeStatus =
 
 export interface DecisionNode {
   id: string;
-  agent_id: string;
+  project_id: string;
   parent_id: string | null;
   label: string;
   prompt: string;
@@ -148,11 +147,11 @@ export interface AppSettings {
 // ─── App State ─────────────────────────────────────────────────
 
 export type ModalType =
-  | { kind: "create_agent" }
-  | { kind: "edit_agent"; agent: Agent }
+  | { kind: "create_project" }
+  | { kind: "edit_project"; project: Project }
   | { kind: "fork_node"; nodeId: string }
   | { kind: "create_structural_node"; parentId: string | null; nodeType: "task" | "decision" | "agent" | "merge" | "final" }
-  | { kind: "delete_agent"; agent: Agent }
+  | { kind: "delete_project"; project: Project }
   | { kind: "delete_node"; node: DecisionNode }
   | { kind: "create_session" }
   | { kind: "orchestrator_decision"; sessionId: string; decision: PendingDecision }

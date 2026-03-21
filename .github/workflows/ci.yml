@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: true
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify Build Inputs
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: latest
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install Rust stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: TypeScript check
+        run: bunx tsc --noEmit
+
+      - name: Rust check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Production build
+        run: bun run build

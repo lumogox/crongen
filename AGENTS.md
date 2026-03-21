@@ -1,6 +1,6 @@
 # crongen
 
-crongen is a Tauri 2 desktop app for scheduling, orchestrating, and monitoring autonomous coding agents. Users configure agents against git repositories, run them as branching decision trees, and inspect execution through a visual canvas with integrated terminals.
+crongen is a Tauri 2 desktop app for scheduling, orchestrating, and monitoring autonomous coding agents. Users configure projects against git repositories, run them as branching decision trees, and inspect execution through a visual canvas with integrated terminals.
 
 ## Stack
 

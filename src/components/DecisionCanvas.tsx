@@ -21,8 +21,6 @@ interface DecisionCanvasProps {
   onForkNode: (nodeId: string) => void;
   onMergeNode: (nodeId: string) => void;
   onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
-  onRunNow: (agentId: string) => void;
-  agentId: string;
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
@@ -57,8 +55,6 @@ export function DecisionCanvas({
   onForkNode,
   onMergeNode,
   onCreateStructuralNode,
-  onRunNow: _onRunNow,
-  agentId: _agentId,
   flowMode,
   onRunNode,
   onUpdateNode,

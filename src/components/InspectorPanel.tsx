@@ -9,7 +9,7 @@ import {
   Trophy,
   Plus,
 } from "lucide-react";
-import type { Agent, DecisionNode } from "../types";
+import type { DecisionNode, Project } from "../types";
 import type { VisualNodeType } from "../types/node-types";
 import { getNodeTypeMeta, inferNodeType } from "../lib/node-type-inference";
 import { formatRelativeTime } from "../lib/utils";
@@ -20,7 +20,7 @@ type InspectorTab = "Overview" | "Session" | "Actions";
 
 interface InspectorPanelProps {
   node: DecisionNode;
-  agent: Agent;
+  project: Project;
   allNodes: DecisionNode[];
   onClose: () => void;
   onFork: (nodeId: string) => void;
@@ -53,7 +53,7 @@ const statusLabels: Record<string, string> = {
 
 export function InspectorPanel({
   node,
-  agent,
+  project,
   allNodes,
   onClose: _onClose,
   onFork: _onFork,
@@ -116,7 +116,7 @@ export function InspectorPanel({
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
             <div className="text-xs text-slate-500">Project</div>
-            <div className="mt-1 text-slate-100">{agent.name}</div>
+            <div className="mt-1 text-slate-100">{project.name}</div>
           </div>
         </div>
       </div>
@@ -145,7 +145,7 @@ export function InspectorPanel({
         {/* Session tab stays mounted for terminal preservation */}
         <SessionTab
           node={node}
-          agentType={agent.agent_type}
+          agentType={project.agent_type}
           isActive={activeTab === "Session"}
         />
 

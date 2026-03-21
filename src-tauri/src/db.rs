@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::models::{Agent, AgentType, AgentTypeConfig, DecisionNode, NodeStatus};
+use crate::models::{AgentType, AgentTypeConfig, DecisionNode, NodeStatus, Project};
 
 // ─── Initialization ────────────────────────────────────────────
 
@@ -10,22 +10,23 @@ pub fn db_init(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
 
-    // Dev migration: drop and recreate if old schema has scheduled_at on agents
-    let has_old_schema = conn
-        .prepare("SELECT scheduled_at FROM agents LIMIT 0")
-        .is_ok();
-    if has_old_schema {
-        log::info!("Migrating: moving scheduled_at from agents to decision_nodes");
+    let has_legacy_agents_table = has_table(conn, "agents")?;
+    let has_legacy_agent_fk = table_has_column(conn, "decision_nodes", "agent_id")?;
+
+    if has_legacy_agents_table || has_legacy_agent_fk {
+        log::warn!("Legacy agent schema detected; resetting local database to projects schema");
         conn.execute_batch(
             "DROP TABLE IF EXISTS orchestrator_sessions;
              DROP TABLE IF EXISTS decision_nodes;
-             DROP TABLE IF EXISTS agents;",
+             DROP TABLE IF EXISTS agents;
+             DROP TABLE IF EXISTS projects;",
         )?;
+        conn.pragma_update(None, "user_version", 0)?;
     }
 
     conn.execute_batch(
         "
-        CREATE TABLE IF NOT EXISTS agents (
+        CREATE TABLE IF NOT EXISTS projects (
             id            TEXT PRIMARY KEY,
             name          TEXT NOT NULL,
             prompt        TEXT NOT NULL,
@@ -34,15 +35,16 @@ pub fn db_init(conn: &Connection) -> Result<()> {
             is_active     INTEGER NOT NULL DEFAULT 1,
             agent_type    TEXT NOT NULL DEFAULT 'custom',
             type_config   TEXT NOT NULL DEFAULT '{}',
+            project_mode  TEXT NOT NULL DEFAULT 'blank',
             created_at    INTEGER NOT NULL,
             updated_at    INTEGER NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(is_active);
+        CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(is_active);
 
         CREATE TABLE IF NOT EXISTS decision_nodes (
             id              TEXT PRIMARY KEY,
-            agent_id        TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+            project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
             parent_id       TEXT REFERENCES decision_nodes(id),
             label           TEXT NOT NULL,
             prompt          TEXT NOT NULL,
@@ -51,12 +53,13 @@ pub fn db_init(conn: &Connection) -> Result<()> {
             commit_hash     TEXT,
             status          TEXT NOT NULL DEFAULT 'pending',
             exit_code       INTEGER,
+            node_type       TEXT,
             scheduled_at    TEXT,
             created_at      INTEGER NOT NULL,
             updated_at      INTEGER NOT NULL
         );
 
-        CREATE INDEX IF NOT EXISTS idx_nodes_agent ON decision_nodes(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_nodes_project ON decision_nodes(project_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_parent ON decision_nodes(parent_id);
         ",
     )?;
@@ -74,25 +77,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
         ",
     )?;
 
-    // Dev migration: add project_mode column if missing
-    let has_project_mode = conn
-        .prepare("SELECT project_mode FROM agents LIMIT 0")
-        .is_ok();
-    if !has_project_mode {
-        log::info!("Migrating: adding project_mode column to agents");
-        conn.execute_batch(
-            "ALTER TABLE agents ADD COLUMN project_mode TEXT NOT NULL DEFAULT 'blank';",
-        )?;
-    }
-
-    // Dev migration: add node_type column if missing
-    let has_node_type = conn
-        .prepare("SELECT node_type FROM decision_nodes LIMIT 0")
-        .is_ok();
-    if !has_node_type {
-        log::info!("Migrating: adding node_type column to decision_nodes");
-        conn.execute_batch("ALTER TABLE decision_nodes ADD COLUMN node_type TEXT;")?;
-    }
+    conn.pragma_update(None, "user_version", 1)?;
 
     Ok(())
 }
@@ -106,7 +91,32 @@ pub fn now_unix() -> i64 {
         .as_secs() as i64
 }
 
-fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
+fn has_table(conn: &Connection, table: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1",
+    )?;
+    Ok(stmt.exists(params![table])?)
+}
+
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    if !has_table(conn, table)? {
+        return Ok(false);
+    }
+
+    let pragma = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&pragma)?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))?;
+
+    for existing in columns {
+        if existing? == column {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
     let agent_type_str: String = row.get("agent_type")?;
     let type_config_str: String = row.get("type_config")?;
     let is_active_int: i32 = row.get("is_active")?;
@@ -117,7 +127,7 @@ fn row_to_agent(row: &rusqlite::Row) -> rusqlite::Result<Agent> {
         AgentTypeConfig::Custom(crate::models::CustomConfig::default()),
     );
 
-    Ok(Agent {
+    Ok(Project {
         id: row.get("id")?,
         name: row.get("name")?,
         prompt: row.get("prompt")?,
@@ -140,7 +150,7 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
 
     Ok(DecisionNode {
         id: row.get("id")?,
-        agent_id: row.get("agent_id")?,
+        project_id: row.get("project_id")?,
         parent_id: row.get("parent_id")?,
         label: row.get("label")?,
         prompt: row.get("prompt")?,
@@ -156,105 +166,105 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
     })
 }
 
-// ─── Agent CRUD ────────────────────────────────────────────────
+// ─── Project CRUD ──────────────────────────────────────────────
 
-pub fn agent_create(conn: &Connection, agent: &Agent) -> Result<()> {
+pub fn project_create(conn: &Connection, project: &Project) -> Result<()> {
     let type_config_json =
-        serde_json::to_string(&agent.type_config).context("Failed to serialize type_config")?;
+        serde_json::to_string(&project.type_config).context("Failed to serialize type_config")?;
 
     conn.execute(
-        "INSERT INTO agents (id, name, prompt, shell, repo_path,
+        "INSERT INTO projects (id, name, prompt, shell, repo_path,
          is_active, agent_type, type_config, project_mode, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
-            agent.id,
-            agent.name,
-            agent.prompt,
-            agent.shell,
-            agent.repo_path,
-            agent.is_active as i32,
-            agent.agent_type.as_str(),
+            project.id,
+            project.name,
+            project.prompt,
+            project.shell,
+            project.repo_path,
+            project.is_active as i32,
+            project.agent_type.as_str(),
             type_config_json,
-            agent.project_mode,
-            agent.created_at,
-            agent.updated_at,
+            project.project_mode,
+            project.created_at,
+            project.updated_at,
         ],
     )?;
 
     Ok(())
 }
 
-pub fn agent_get_all(conn: &Connection) -> Result<Vec<Agent>> {
+pub fn project_get_all(conn: &Connection) -> Result<Vec<Project>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, prompt, shell, repo_path,
                 is_active, agent_type, type_config, project_mode, created_at, updated_at
-         FROM agents ORDER BY created_at DESC",
+         FROM projects ORDER BY created_at DESC",
     )?;
 
-    let agents = stmt
-        .query_map([], row_to_agent)?
+    let projects = stmt
+        .query_map([], row_to_project)?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(agents)
+    Ok(projects)
 }
 
-pub fn agent_get_by_id(conn: &Connection, id: &str) -> Result<Agent> {
+pub fn project_get_by_id(conn: &Connection, id: &str) -> Result<Project> {
     let mut stmt = conn.prepare(
         "SELECT id, name, prompt, shell, repo_path,
                 is_active, agent_type, type_config, project_mode, created_at, updated_at
-         FROM agents WHERE id = ?1",
+         FROM projects WHERE id = ?1",
     )?;
 
-    let agent = stmt
-        .query_row(params![id], row_to_agent)
-        .context("Agent not found")?;
+    let project = stmt
+        .query_row(params![id], row_to_project)
+        .context("Project not found")?;
 
-    Ok(agent)
+    Ok(project)
 }
 
-pub fn agent_update(conn: &Connection, agent: &Agent) -> Result<()> {
+pub fn project_update(conn: &Connection, project: &Project) -> Result<()> {
     let type_config_json =
-        serde_json::to_string(&agent.type_config).context("Failed to serialize type_config")?;
+        serde_json::to_string(&project.type_config).context("Failed to serialize type_config")?;
 
     let rows = conn.execute(
-        "UPDATE agents SET name=?1, prompt=?2, shell=?3, repo_path=?4,
+        "UPDATE projects SET name=?1, prompt=?2, shell=?3, repo_path=?4,
          is_active=?5, agent_type=?6, type_config=?7, project_mode=?8, updated_at=?9
          WHERE id=?10",
         params![
-            agent.name,
-            agent.prompt,
-            agent.shell,
-            agent.repo_path,
-            agent.is_active as i32,
-            agent.agent_type.as_str(),
+            project.name,
+            project.prompt,
+            project.shell,
+            project.repo_path,
+            project.is_active as i32,
+            project.agent_type.as_str(),
             type_config_json,
-            agent.project_mode,
-            agent.updated_at,
-            agent.id,
+            project.project_mode,
+            project.updated_at,
+            project.id,
         ],
     )?;
 
     if rows == 0 {
-        anyhow::bail!("Agent not found: {}", agent.id);
+        anyhow::bail!("Project not found: {}", project.id);
     }
 
     Ok(())
 }
 
-pub fn agent_delete(conn: &Connection, id: &str) -> Result<()> {
-    // Delete in FK-dependency order: orchestrator_sessions → decision_nodes → agents
+pub fn project_delete(conn: &Connection, id: &str) -> Result<()> {
+    // Delete in FK-dependency order: orchestrator_sessions → decision_nodes → projects
     conn.execute(
         "DELETE FROM orchestrator_sessions WHERE session_root_id IN \
-         (SELECT id FROM decision_nodes WHERE agent_id = ?1)",
+         (SELECT id FROM decision_nodes WHERE project_id = ?1)",
         params![id],
     )?;
     conn.execute(
-        "DELETE FROM decision_nodes WHERE agent_id = ?1",
+        "DELETE FROM decision_nodes WHERE project_id = ?1",
         params![id],
     )?;
-    let rows = conn.execute("DELETE FROM agents WHERE id = ?1", params![id])?;
+    let rows = conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
     if rows == 0 {
-        anyhow::bail!("Agent not found: {id}");
+        anyhow::bail!("Project not found: {id}");
     }
     Ok(())
 }
@@ -263,13 +273,13 @@ pub fn agent_delete(conn: &Connection, id: &str) -> Result<()> {
 
 pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
     conn.execute(
-        "INSERT INTO decision_nodes (id, agent_id, parent_id, label, prompt,
+        "INSERT INTO decision_nodes (id, project_id, parent_id, label, prompt,
          branch_name, worktree_path, commit_hash, status, exit_code,
          node_type, scheduled_at, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             node.id,
-            node.agent_id,
+            node.project_id,
             node.parent_id,
             node.label,
             node.prompt,
@@ -288,17 +298,17 @@ pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
     Ok(())
 }
 
-pub fn node_get_tree(conn: &Connection, agent_id: &str) -> Result<Vec<DecisionNode>> {
+pub fn node_get_tree(conn: &Connection, project_id: &str) -> Result<Vec<DecisionNode>> {
     let mut stmt = conn.prepare(
-        "SELECT id, agent_id, parent_id, label, prompt, branch_name,
+        "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
                 node_type, scheduled_at, created_at, updated_at
-         FROM decision_nodes WHERE agent_id = ?1
+         FROM decision_nodes WHERE project_id = ?1
          ORDER BY created_at ASC",
     )?;
 
     let nodes = stmt
-        .query_map(params![agent_id], row_to_node)?
+        .query_map(params![project_id], row_to_node)?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(nodes)
@@ -306,7 +316,7 @@ pub fn node_get_tree(conn: &Connection, agent_id: &str) -> Result<Vec<DecisionNo
 
 pub fn node_get_by_id(conn: &Connection, id: &str) -> Result<DecisionNode> {
     let mut stmt = conn.prepare(
-        "SELECT id, agent_id, parent_id, label, prompt, branch_name,
+        "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
                 node_type, scheduled_at, created_at, updated_at
          FROM decision_nodes WHERE id = ?1",
@@ -342,11 +352,11 @@ pub fn node_update_commit(conn: &Connection, id: &str, commit_hash: &str) -> Res
     Ok(())
 }
 
-pub fn node_has_active_session(conn: &Connection, agent_id: &str) -> Result<bool> {
+pub fn node_has_active_session(conn: &Connection, project_id: &str) -> Result<bool> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM decision_nodes
-         WHERE agent_id = ?1 AND status IN ('running', 'paused')",
-        params![agent_id],
+         WHERE project_id = ?1 AND status IN ('running', 'paused')",
+        params![project_id],
         |row| row.get(0),
     )?;
     Ok(count > 0)
@@ -376,17 +386,17 @@ pub fn node_delete_branch(conn: &Connection, id: &str) -> Result<Vec<String>> {
     Ok(node_ids)
 }
 
-pub fn node_get_roots(conn: &Connection, agent_id: &str) -> Result<Vec<DecisionNode>> {
+pub fn node_get_roots(conn: &Connection, project_id: &str) -> Result<Vec<DecisionNode>> {
     let mut stmt = conn.prepare(
-        "SELECT id, agent_id, parent_id, label, prompt, branch_name,
+        "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
                 node_type, scheduled_at, created_at, updated_at
-         FROM decision_nodes WHERE agent_id = ?1 AND parent_id IS NULL
+         FROM decision_nodes WHERE project_id = ?1 AND parent_id IS NULL
          ORDER BY created_at DESC",
     )?;
 
     let nodes = stmt
-        .query_map(params![agent_id], row_to_node)?
+        .query_map(params![project_id], row_to_node)?
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(nodes)
@@ -394,7 +404,7 @@ pub fn node_get_roots(conn: &Connection, agent_id: &str) -> Result<Vec<DecisionN
 
 pub fn node_get_children(conn: &Connection, parent_id: &str) -> Result<Vec<DecisionNode>> {
     let mut stmt = conn.prepare(
-        "SELECT id, agent_id, parent_id, label, prompt, branch_name,
+        "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
                 node_type, scheduled_at, created_at, updated_at
          FROM decision_nodes WHERE parent_id = ?1
@@ -416,7 +426,7 @@ pub fn node_get_subtree(conn: &Connection, root_id: &str) -> Result<Vec<Decision
             SELECT dn.id FROM decision_nodes dn
             JOIN subtree s ON dn.parent_id = s.nid
         )
-        SELECT dn.id, dn.agent_id, dn.parent_id, dn.label, dn.prompt,
+        SELECT dn.id, dn.project_id, dn.parent_id, dn.label, dn.prompt,
                dn.branch_name, dn.worktree_path, dn.commit_hash, dn.status,
                dn.exit_code, dn.node_type, dn.scheduled_at, dn.created_at, dn.updated_at
         FROM decision_nodes dn

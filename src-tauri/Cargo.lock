@@ -9,30 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "crongen"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "dirs",
- "git2",
- "libc",
- "log",
- "portable-pty",
- "rusqlite",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tokio",
- "toon-format",
- "uuid",
- "which",
-]
-
-[[package]]
 name = "ahash"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -728,6 +704,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crongen"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs",
+ "git2",
+ "libc",
+ "log",
+ "portable-pty",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tokio",
+ "toon-format",
+ "uuid",
+ "which",
 ]
 
 [[package]]

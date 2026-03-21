@@ -583,20 +583,20 @@ async fn run_single_node(
     .await
     .map_err(|e| format!("Task: {e}"))??;
 
-    // Fetch agent
-    let agent = tokio::task::spawn_blocking({
+    // Fetch project
+    let project = tokio::task::spawn_blocking({
         let db_c = db.clone();
-        let aid = node.agent_id.clone();
+        let pid = node.project_id.clone();
         move || {
             let conn = db_c.lock().map_err(|e| format!("DB lock: {e}"))?;
-            db::agent_get_by_id(&conn, &aid).map_err(|e| format!("{e}"))
+            db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))
         }
     })
     .await
     .map_err(|e| format!("Task: {e}"))??;
 
     // Ensure git repo
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     tokio::task::spawn_blocking(move || {
         crate::git_manager::ensure_git_repo(&repo_path).map_err(|e| format!("{e}"))
     })
@@ -639,7 +639,7 @@ async fn run_single_node(
             .trim_matches('-'),
         db::now_unix()
     );
-    let repo_path = agent.repo_path.clone();
+    let repo_path = project.repo_path.clone();
     let branch = branch_name.clone();
     let commit_ref = from_commit.clone();
     let wt_info = tokio::task::spawn_blocking(move || {
@@ -681,7 +681,7 @@ async fn run_single_node(
     let toon_context = {
         let db_c = db.clone();
         let node_for_ctx = node.clone();
-        let repo_path_for_ctx = agent.repo_path.clone();
+        let repo_path_for_ctx = project.repo_path.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_c.lock().map_err(|e| format!("DB lock: {e}"))?;
             let ctx =
@@ -701,9 +701,9 @@ async fn run_single_node(
 
     // Build execution command
     let execution = agent_templates::build_shell_command(
-        &agent.agent_type,
+        &project.agent_type,
         &node.prompt,
-        &agent.type_config,
+        &project.type_config,
         Some(&toon_context),
         node.node_type.as_deref(),
         exec_model.as_deref(),
@@ -714,7 +714,7 @@ async fn run_single_node(
         ExecutionMode::Pty(shell) => {
             pty.spawn_session(
                 &nid,
-                &agent.id,
+                &project.id,
                 &nid,
                 &shell.program,
                 &shell.args,
@@ -729,7 +729,7 @@ async fn run_single_node(
         ExecutionMode::Sdk(sdk_exec) => {
             sdk.spawn_session(
                 &nid,
-                &agent.id,
+                &project.id,
                 &nid,
                 &sdk_exec.program,
                 &sdk_exec.args,
