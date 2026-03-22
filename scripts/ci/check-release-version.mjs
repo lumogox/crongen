@@ -15,31 +15,54 @@ function readCargoVersion(path) {
   return match[1];
 }
 
-const tagName = process.argv[2]?.trim() ?? "";
+const releaseInput = process.argv[2]?.trim() ?? "";
 const packageVersion = readJson("package.json").version;
 const tauriVersion = readJson("src-tauri/tauri.conf.json").version;
 const cargoVersion = readCargoVersion("src-tauri/Cargo.toml");
 
 const issues = [];
+const stableVersionPattern = /^\d+\.\d+\.\d+$/;
 
-if (packageVersion !== tauriVersion) {
-  issues.push(`package.json version ${packageVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`);
-}
+let expectedVersion = "";
 
-if (cargoVersion !== tauriVersion) {
-  issues.push(`src-tauri/Cargo.toml version ${cargoVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`);
-}
-
-if (tagName) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tagName)) {
-    issues.push(`Git tag ${tagName} must match the stable release format vX.Y.Z.`);
+if (releaseInput) {
+  if (/^v\d+\.\d+\.\d+$/.test(releaseInput)) {
+    expectedVersion = releaseInput.slice(1);
+  } else if (stableVersionPattern.test(releaseInput)) {
+    expectedVersion = releaseInput;
   } else {
-    const tagVersion = tagName.slice(1);
-
-    if (tagVersion !== tauriVersion) {
-      issues.push(`Git tag ${tagName} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`);
-    }
+    issues.push(
+      `Release input ${releaseInput} must match the stable release format X.Y.Z or vX.Y.Z.`
+    );
   }
+}
+
+if (!stableVersionPattern.test(tauriVersion)) {
+  issues.push(`src-tauri/tauri.conf.json version ${tauriVersion} must match the stable release format X.Y.Z.`);
+}
+
+if (!releaseInput) {
+  if (packageVersion !== tauriVersion) {
+    issues.push(
+      `package.json version ${packageVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`
+    );
+  }
+
+  if (cargoVersion !== tauriVersion) {
+    issues.push(
+      `src-tauri/Cargo.toml version ${cargoVersion} does not match src-tauri/tauri.conf.json version ${tauriVersion}.`
+    );
+  }
+
+  if (!stableVersionPattern.test(packageVersion)) {
+    issues.push(`package.json version ${packageVersion} must match the stable release format X.Y.Z.`);
+  }
+
+  if (!stableVersionPattern.test(cargoVersion)) {
+    issues.push(`src-tauri/Cargo.toml version ${cargoVersion} must match the stable release format X.Y.Z.`);
+  }
+} else if (expectedVersion && !stableVersionPattern.test(expectedVersion)) {
+  issues.push(`Resolved release version ${expectedVersion} must match the stable release format X.Y.Z.`);
 }
 
 if (issues.length > 0) {
@@ -50,8 +73,12 @@ if (issues.length > 0) {
   process.exit(1);
 }
 
-console.log(
-  tagName
-    ? `Release version validation passed for ${tagName} (${tauriVersion}).`
-    : `Release version validation passed for ${tauriVersion}.`
-);
+if (releaseInput) {
+  if (releaseInput.startsWith("v")) {
+    console.log(`Release input validation passed for tag ${releaseInput}.`);
+  } else {
+    console.log(`Release input validation passed for version ${releaseInput}.`);
+  }
+} else {
+  console.log(`Release version validation passed for ${tauriVersion}.`);
+}

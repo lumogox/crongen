@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version override for dry-run builds (for example 1.0.4)"
+        required: false
+        type: string
   push:
     tags:
       - "v*.*.*"
@@ -21,6 +26,9 @@ jobs:
   preflight:
     name: Validate Release Inputs
     runs-on: ubuntu-22.04
+    outputs:
+      release_tag: ${{ steps.release_meta.outputs.release_tag }}
+      release_version: ${{ steps.release_meta.outputs.release_version }}
 
     steps:
       - name: Check out repository
@@ -33,11 +41,38 @@ jobs:
         with:
           bun-version-file: package.json
 
-      - name: Validate version alignment
+      - name: Resolve release metadata
+        id: release_meta
         shell: bash
         run: |
           set -euo pipefail
-          bun ./scripts/ci/check-release-version.mjs "${{ github.event_name == 'push' && github.ref_name || '' }}"
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            release_tag="${{ github.ref_name }}"
+            bun ./scripts/ci/check-release-version.mjs "$release_tag"
+            release_version="${release_tag#v}"
+          else
+            release_version="${{ inputs.version }}"
+
+            if [[ -n "$release_version" ]]; then
+              bun ./scripts/ci/check-release-version.mjs "$release_version"
+            else
+              bun ./scripts/ci/check-release-version.mjs
+              release_version="$(node -e 'console.log(JSON.parse(require(\"fs\").readFileSync(\"src-tauri/tauri.conf.json\", \"utf8\")).version)')"
+            fi
+
+            release_tag="v$release_version"
+          fi
+
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "release_version=$release_version" >> "$GITHUB_OUTPUT"
+
+      - name: Show resolved release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Release tag: ${{ steps.release_meta.outputs.release_tag }}"
+          echo "Release version: ${{ steps.release_meta.outputs.release_version }}"
 
   build:
     name: Build ${{ matrix.label }}
@@ -56,24 +91,33 @@ jobs:
             rust_target: aarch64-apple-darwin
             artifact_name: crongen-macos-aarch64-bundle
             artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle
+            upload_globs: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           - label: macOS Intel
             runner: macos-15-intel
             args: --target x86_64-apple-darwin --bundles dmg --no-sign
             rust_target: x86_64-apple-darwin
             artifact_name: crongen-macos-x64-bundle
             artifact_path: src-tauri/target/x86_64-apple-darwin/release/bundle
+            upload_globs: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           - label: Windows x64
             runner: windows-latest
             args: --bundles nsis
             rust_target: ""
             artifact_name: crongen-windows-x64-bundle
             artifact_path: src-tauri/target/release/bundle
+            upload_globs: |
+              src-tauri/target/release/bundle/nsis/*.exe
           - label: Linux x64
             runner: ubuntu-22.04
             args: --bundles appimage,deb
             rust_target: ""
             artifact_name: crongen-linux-x64-bundle
             artifact_path: src-tauri/target/release/bundle
+            upload_globs: |
+              src-tauri/target/release/bundle/appimage/*.AppImage
+              src-tauri/target/release/bundle/deb/*.deb
 
     steps:
       - name: Check out repository
@@ -109,24 +153,60 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Create release version override
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > src-tauri/tauri.release.conf.json <<EOF
+          {
+            "version": "${{ needs.preflight.outputs.release_version }}"
+          }
+          EOF
+
       - name: Build release bundles
         if: github.event_name == 'push'
-        uses: tauri-apps/tauri-action@action-v0.6.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tauriScript: bun run tauri
-          args: ${{ matrix.args }}
-          tagName: ${{ github.ref_name }}
-          releaseName: crongen v__VERSION__
-          generateReleaseNotes: true
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: false
+        run: bun run tauri build --config src-tauri/tauri.release.conf.json ${{ matrix.args }}
 
       - name: Build dry-run bundles
         if: github.event_name == 'workflow_dispatch'
-        run: bun run tauri build ${{ matrix.args }}
+        run: bun run tauri build --config src-tauri/tauri.release.conf.json ${{ matrix.args }}
+
+      - name: Upload release assets
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.release_tag }}
+          RELEASE_TITLE: crongen v${{ needs.preflight.outputs.release_version }}
+          UPLOAD_GLOBS: ${{ matrix.upload_globs }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --generate-notes \
+            || gh release view "$RELEASE_TAG" >/dev/null 2>&1
+          fi
+
+          shopt -s nullglob
+          files=()
+
+          while IFS= read -r pattern; do
+            [[ -z "$pattern" ]] && continue
+            matches=( $pattern )
+            files+=( "${matches[@]}" )
+          done <<< "$UPLOAD_GLOBS"
+
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No release assets matched the configured upload patterns."
+            printf '%s\n' "$UPLOAD_GLOBS"
+            exit 1
+          fi
+
+          gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
 
       - name: Upload dry-run bundles
         if: github.event_name == 'workflow_dispatch'
