@@ -56,6 +56,13 @@ toon-format = "0.4"
 which = "7"
 dirs = "6"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Threading",
+] }
+
 [profile.dev]
 debug = 0
 codegen-units = 1

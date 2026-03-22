@@ -9,6 +9,8 @@ mod plan_generator;
 mod pty_manager;
 mod sdk_manager;
 mod toon;
+#[cfg(windows)]
+mod windows_process;
 
 use commands::AppState;
 use orchestrator::OrchestratorManager;

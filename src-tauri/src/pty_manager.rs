@@ -447,15 +447,25 @@ impl PtyManager {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     pub fn pause_session(&self, session_id: &str) -> Result<()> {
-        if !self.has_session(session_id) {
-            return Err(anyhow::anyhow!("Session not found: {session_id}"));
-        }
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
+        let pid = session
+            .process_id
+            .ok_or_else(|| anyhow::anyhow!("No process ID for session: {session_id}"))?;
+        drop(sessions);
 
-        Err(anyhow::anyhow!(
-            "Pausing PTY sessions is not supported on this platform"
-        ))
+        let suspended_threads = crate::windows_process::suspend_process(pid)?;
+        log::info!(
+            "Paused session {} (pid {}, suspended {} thread(s))",
+            session_id,
+            pid,
+            suspended_threads
+        );
+        Ok(())
     }
 
     /// Resume a paused PTY session by sending SIGCONT to the process.
@@ -482,15 +492,25 @@ impl PtyManager {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     pub fn resume_session(&self, session_id: &str) -> Result<()> {
-        if !self.has_session(session_id) {
-            return Err(anyhow::anyhow!("Session not found: {session_id}"));
-        }
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
+        let pid = session
+            .process_id
+            .ok_or_else(|| anyhow::anyhow!("No process ID for session: {session_id}"))?;
+        drop(sessions);
 
-        Err(anyhow::anyhow!(
-            "Resuming PTY sessions is not supported on this platform"
-        ))
+        let resumed_threads = crate::windows_process::resume_process(pid)?;
+        log::info!(
+            "Resumed session {} (pid {}, resumed {} thread(s))",
+            session_id,
+            pid,
+            resumed_threads
+        );
+        Ok(())
     }
 
     /// Get buffered output for a session (base64-encoded).

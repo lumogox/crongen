@@ -285,15 +285,23 @@ impl SdkManager {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     pub fn pause_session(&self, session_id: &str) -> anyhow::Result<()> {
-        if !self.has_session(session_id) {
-            return Err(anyhow::anyhow!("SDK session not found: {session_id}"));
-        }
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("SDK session not found: {session_id}"))?;
+        let pid = session.process_id;
+        drop(sessions);
 
-        Err(anyhow::anyhow!(
-            "Pausing SDK sessions is not supported on this platform"
-        ))
+        let suspended_threads = crate::windows_process::suspend_process(pid)?;
+        log::info!(
+            "Paused SDK session {} (pid {}, suspended {} thread(s))",
+            session_id,
+            pid,
+            suspended_threads
+        );
+        Ok(())
     }
 
     /// Resume a paused SDK session by sending SIGCONT.
@@ -317,15 +325,23 @@ impl SdkManager {
         Ok(())
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     pub fn resume_session(&self, session_id: &str) -> anyhow::Result<()> {
-        if !self.has_session(session_id) {
-            return Err(anyhow::anyhow!("SDK session not found: {session_id}"));
-        }
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("SDK session not found: {session_id}"))?;
+        let pid = session.process_id;
+        drop(sessions);
 
-        Err(anyhow::anyhow!(
-            "Resuming SDK sessions is not supported on this platform"
-        ))
+        let resumed_threads = crate::windows_process::resume_process(pid)?;
+        log::info!(
+            "Resumed SDK session {} (pid {}, resumed {} thread(s))",
+            session_id,
+            pid,
+            resumed_threads
+        );
+        Ok(())
     }
 
     /// Get buffered JSON lines for a session.
