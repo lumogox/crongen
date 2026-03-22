@@ -32,27 +32,9 @@ The release workflow fails early if the three version declarations do not match,
 
 ## macOS Signing
 
-If no Apple signing secrets are configured, the workflow falls back to ad-hoc signing by setting `APPLE_SIGNING_IDENTITY=-`. This keeps Apple Silicon downloads runnable, but users should expect the normal macOS security warning for unsigned direct downloads.
+The release workflow currently builds macOS DMGs with `--no-sign`, so no Apple signing or notarization secrets are required in CI.
 
-To enable full macOS signing in CI, configure:
-
-- `APPLE_CERTIFICATE`: single-line base64-encoded `.p12` signing certificate
-- `APPLE_CERTIFICATE_PASSWORD`: password for the `.p12`
-- `KEYCHAIN_PASSWORD`: temporary CI keychain password
-- `APPLE_SIGNING_IDENTITY`: optional explicit identity name; if omitted, the workflow auto-detects the first suitable identity from the imported certificate
-
-The workflow imports the certificate into a temporary runner keychain first and then lets Tauri sign by identity. It intentionally does not pass `APPLE_CERTIFICATE` to the Tauri build step, which avoids a second certificate import during bundling.
-
-For notarization, configure one of these sets:
-
-- App Store Connect API:
-  - `APPLE_API_ISSUER`
-  - `APPLE_API_KEY`
-  - `APPLE_API_KEY_CONTENT`: raw `.p8` private key contents
-- Apple ID notarization:
-  - `APPLE_ID`
-  - `APPLE_PASSWORD`
-  - `APPLE_TEAM_ID`
+That keeps the pipeline simple and avoids certificate import failures, but macOS downloads should be treated as unsigned direct downloads and may require user approval in Privacy & Security before first launch.
 
 ## Windows Signing
 

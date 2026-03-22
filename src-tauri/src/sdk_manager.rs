@@ -285,6 +285,17 @@ impl SdkManager {
         Ok(())
     }
 
+    #[cfg(not(unix))]
+    pub fn pause_session(&self, session_id: &str) -> anyhow::Result<()> {
+        if !self.has_session(session_id) {
+            return Err(anyhow::anyhow!("SDK session not found: {session_id}"));
+        }
+
+        Err(anyhow::anyhow!(
+            "Pausing SDK sessions is not supported on this platform"
+        ))
+    }
+
     /// Resume a paused SDK session by sending SIGCONT.
     #[cfg(unix)]
     pub fn resume_session(&self, session_id: &str) -> anyhow::Result<()> {
@@ -304,6 +315,17 @@ impl SdkManager {
 
         log::info!("Resumed SDK session {} (pid {})", session_id, pid);
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub fn resume_session(&self, session_id: &str) -> anyhow::Result<()> {
+        if !self.has_session(session_id) {
+            return Err(anyhow::anyhow!("SDK session not found: {session_id}"));
+        }
+
+        Err(anyhow::anyhow!(
+            "Resuming SDK sessions is not supported on this platform"
+        ))
     }
 
     /// Get buffered JSON lines for a session.

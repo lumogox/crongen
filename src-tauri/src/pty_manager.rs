@@ -447,6 +447,17 @@ impl PtyManager {
         Ok(())
     }
 
+    #[cfg(not(unix))]
+    pub fn pause_session(&self, session_id: &str) -> Result<()> {
+        if !self.has_session(session_id) {
+            return Err(anyhow::anyhow!("Session not found: {session_id}"));
+        }
+
+        Err(anyhow::anyhow!(
+            "Pausing PTY sessions is not supported on this platform"
+        ))
+    }
+
     /// Resume a paused PTY session by sending SIGCONT to the process.
     #[cfg(unix)]
     pub fn resume_session(&self, session_id: &str) -> Result<()> {
@@ -469,6 +480,17 @@ impl PtyManager {
 
         log::info!("Resumed session {} (pid {})", session_id, pid);
         Ok(())
+    }
+
+    #[cfg(not(unix))]
+    pub fn resume_session(&self, session_id: &str) -> Result<()> {
+        if !self.has_session(session_id) {
+            return Err(anyhow::anyhow!("Session not found: {session_id}"));
+        }
+
+        Err(anyhow::anyhow!(
+            "Resuming PTY sessions is not supported on this platform"
+        ))
     }
 
     /// Get buffered output for a session (base64-encoded).

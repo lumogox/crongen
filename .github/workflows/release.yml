@@ -52,13 +52,13 @@ jobs:
         include:
           - label: macOS Apple Silicon
             runner: macos-latest
-            args: --target aarch64-apple-darwin --bundles dmg
+            args: --target aarch64-apple-darwin --bundles dmg --no-sign
             rust_target: aarch64-apple-darwin
             artifact_name: crongen-macos-aarch64-bundle
             artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle
           - label: macOS Intel
             runner: macos-latest
-            args: --target x86_64-apple-darwin --bundles dmg
+            args: --target x86_64-apple-darwin --bundles dmg --no-sign
             rust_target: x86_64-apple-darwin
             artifact_name: crongen-macos-x64-bundle
             artifact_path: src-tauri/target/x86_64-apple-darwin/release/bundle
@@ -109,88 +109,11 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Prepare macOS signing
-        if: runner.os == 'macOS'
-        id: macos-signing
-        shell: bash
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "${APPLE_CERTIFICATE:-}" && -n "${APPLE_CERTIFICATE_PASSWORD:-}" && -n "${KEYCHAIN_PASSWORD:-}" ]]; then
-            certificate_path="$RUNNER_TEMP/apple-certificate.p12"
-            keychain_path="$RUNNER_TEMP/build.keychain-db"
-
-            if ! echo "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path" 2>/dev/null; then
-              echo "$APPLE_CERTIFICATE" | base64 -D > "$certificate_path"
-            fi
-
-            security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-            security default-keychain -s "$keychain_path"
-            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-            security set-keychain-settings -lut 21600 "$keychain_path"
-            security import "$certificate_path" -k "$keychain_path" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
-
-            identity="${APPLE_SIGNING_IDENTITY:-}"
-            if [[ -z "$identity" ]]; then
-              identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'\"' '/Developer ID Application|Apple Distribution|Apple Development/ { print $2; exit }')"
-            fi
-
-            if [[ -z "$identity" ]]; then
-              echo "Unable to resolve a macOS signing identity from the imported certificate." >&2
-              exit 1
-            fi
-
-            echo "identity=$identity" >> "$GITHUB_OUTPUT"
-            echo "keychain_path=$keychain_path" >> "$GITHUB_OUTPUT"
-          else
-            echo "identity=-" >> "$GITHUB_OUTPUT"
-            echo "keychain_path=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify macOS signing identity
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "Using signing identity: ${{ steps.macos-signing.outputs.identity }}"
-          security find-identity -v -p codesigning || true
-
-      - name: Prepare App Store Connect credentials
-        if: runner.os == 'macOS'
-        id: macos-notarization
-        shell: bash
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-        run: |
-          set -euo pipefail
-          if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
-            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
-            printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
-            chmod 600 "$key_path"
-            echo "api_key_path=$key_path" >> "$GITHUB_OUTPUT"
-          else
-            echo "api_key_path=" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Build release bundles
         if: github.event_name == 'push'
         uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_SIGNING_IDENTITY: ${{ steps.macos-signing.outputs.identity }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ steps.macos-notarization.outputs.api_key_path }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tauriScript: bun run tauri
           args: ${{ matrix.args }}
@@ -203,14 +126,6 @@ jobs:
 
       - name: Build dry-run bundles
         if: github.event_name == 'workflow_dispatch'
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ steps.macos-signing.outputs.identity }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ steps.macos-notarization.outputs.api_key_path }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bun run tauri build ${{ matrix.args }}
 
       - name: Upload dry-run bundles
@@ -220,9 +135,3 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
-
-      - name: Clean up macOS keychain
-        if: always() && runner.os == 'macOS' && steps.macos-signing.outputs.keychain_path != ''
-        shell: bash
-        run: |
-          security delete-keychain "${{ steps.macos-signing.outputs.keychain_path }}" || true
