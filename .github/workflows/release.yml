@@ -51,13 +51,13 @@ jobs:
       matrix:
         include:
           - label: macOS Apple Silicon
-            runner: macos-latest
+            runner: macos-15
             args: --target aarch64-apple-darwin --bundles dmg --no-sign
             rust_target: aarch64-apple-darwin
             artifact_name: crongen-macos-aarch64-bundle
             artifact_path: src-tauri/target/aarch64-apple-darwin/release/bundle
           - label: macOS Intel
-            runner: macos-latest
+            runner: macos-15-intel
             args: --target x86_64-apple-darwin --bundles dmg --no-sign
             rust_target: x86_64-apple-darwin
             artifact_name: crongen-macos-x64-bundle
