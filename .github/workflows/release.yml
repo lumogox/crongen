@@ -51,7 +51,7 @@ jobs:
       matrix:
         include:
           - label: macOS Apple Silicon
-            runner: macos-15
+            runner: macos-latest
             args: --target aarch64-apple-darwin --bundles dmg --no-sign
             rust_target: aarch64-apple-darwin
             artifact_name: crongen-macos-aarch64-bundle
