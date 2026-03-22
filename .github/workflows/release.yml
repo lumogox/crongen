@@ -31,7 +31,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Validate version alignment
         shell: bash
@@ -82,7 +82,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
