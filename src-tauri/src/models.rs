@@ -216,6 +216,7 @@ pub struct DecisionNode {
     pub exit_code: Option<i32>,
     pub node_type: Option<String>, // "task", "agent", "decision", "merge", "final"
     pub scheduled_at: Option<String>, // ISO 8601 datetime — only meaningful on root (session) nodes
+    pub started_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }

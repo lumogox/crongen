@@ -34,12 +34,13 @@ fn test_db_init_creates_project_schema_and_crud() {
     assert!(table_exists(&conn, "orchestrator_sessions"));
     assert!(column_exists(&conn, "projects", "project_mode"));
     assert!(column_exists(&conn, "decision_nodes", "project_id"));
+    assert!(column_exists(&conn, "decision_nodes", "started_at"));
     assert!(!column_exists(&conn, "decision_nodes", "agent_id"));
 
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 1);
+    assert_eq!(user_version, 2);
 
     let config = serde_json::json!({
         "type": "claude_code",
@@ -103,6 +104,65 @@ fn test_db_init_creates_project_schema_and_crud() {
     let parsed: serde_json::Value = serde_json::from_str(&projects[0].3).unwrap();
     assert_eq!(parsed["type"], "claude_code");
     assert_eq!(parsed["dangerously_skip_permissions"], true);
+
+    let root_node = models::DecisionNode {
+        id: "node-root-001".to_string(),
+        project_id: "project-001".to_string(),
+        parent_id: None,
+        label: "Root".to_string(),
+        prompt: "Bootstrap the session".to_string(),
+        branch_name: "session/root".to_string(),
+        worktree_path: None,
+        commit_hash: None,
+        status: models::NodeStatus::Completed,
+        exit_code: Some(0),
+        node_type: Some("task".to_string()),
+        scheduled_at: None,
+        started_at: Some(1_500_000),
+        created_at: 1_000_000,
+        updated_at: 1_500_100,
+    };
+    db::node_create(&conn, &root_node).unwrap();
+
+    let child_node = models::DecisionNode {
+        id: "node-child-001".to_string(),
+        project_id: "project-001".to_string(),
+        parent_id: Some("node-root-001".to_string()),
+        label: "Child".to_string(),
+        prompt: "Continue the work".to_string(),
+        branch_name: "session/root/child".to_string(),
+        worktree_path: None,
+        commit_hash: None,
+        status: models::NodeStatus::Completed,
+        exit_code: Some(0),
+        node_type: Some("agent".to_string()),
+        scheduled_at: None,
+        started_at: Some(1_600_000),
+        created_at: 1_100_000,
+        updated_at: 1_600_100,
+    };
+    db::node_create(&conn, &child_node).unwrap();
+
+    let tree = db::node_get_tree(&conn, "project-001").unwrap();
+    assert_eq!(tree.len(), 2);
+    assert_eq!(tree[0].started_at, Some(1_500_000));
+    assert_eq!(tree[1].started_at, Some(1_600_000));
+
+    let roots = db::node_get_roots(&conn, "project-001").unwrap();
+    assert_eq!(roots.len(), 1);
+    assert_eq!(roots[0].started_at, Some(1_500_000));
+
+    let children = db::node_get_children(&conn, "node-root-001").unwrap();
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].started_at, Some(1_600_000));
+
+    let loaded_root = db::node_get_by_id(&conn, "node-root-001").unwrap();
+    assert_eq!(loaded_root.started_at, Some(1_500_000));
+
+    let subtree = db::node_get_subtree(&conn, "node-root-001").unwrap();
+    assert_eq!(subtree.len(), 2);
+    assert_eq!(subtree[0].started_at, Some(1_500_000));
+    assert_eq!(subtree[1].started_at, Some(1_600_000));
 
     conn.execute(
         "UPDATE projects SET name = ?1, updated_at = ?2 WHERE id = ?3",
@@ -254,6 +314,7 @@ fn test_db_init_resets_legacy_agent_schema() {
     assert!(table_exists(&conn, "projects"));
     assert!(column_exists(&conn, "projects", "project_mode"));
     assert!(column_exists(&conn, "decision_nodes", "project_id"));
+    assert!(column_exists(&conn, "decision_nodes", "started_at"));
     assert!(!column_exists(&conn, "decision_nodes", "agent_id"));
 
     let project_count: i64 = conn
@@ -268,7 +329,7 @@ fn test_db_init_resets_legacy_agent_schema() {
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 1);
+    assert_eq!(user_version, 2);
 }
 
 #[test]

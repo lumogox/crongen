@@ -68,27 +68,29 @@ const PLAN_LINEAR_PROMPT: &str = r#"You are a task planner. Output ONLY raw JSON
 
 Rules for LINEAR plans (no branching, no decisions):
 - Root node: type "task" — sets up the project
-- Children are sequential "agent" nodes — each does one step
+- The tree is a single chain of "agent" nodes: task > agent > agent > ...
+- Each node has at most one child
 - NO "decision", "merge", or "final" nodes
 - Max 3 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Auth System", "Search Feature"), NOT the structural role. Child labels describe specific steps.
 
 Example for user task "Build a todo list app":
-{"root":{"label":"Todo List App","prompt":"Scaffold a new Vite + React project with Tailwind CSS.","node_type":"task","children":[{"label":"Build Todo UI","prompt":"Implement the todo list with add, complete, and delete functionality.","node_type":"agent","children":[]}]}}"#;
+{"root":{"label":"Todo List App","prompt":"Scaffold a new Vite + React project with Tailwind CSS.","node_type":"task","children":[{"label":"Build Todo UI","prompt":"Implement the todo list with add, complete, and delete functionality.","node_type":"agent","children":[{"label":"Polish Todo UI","prompt":"Refine the interface and add basic validation.","node_type":"agent","children":[]}]}]}}"#;
 
 const PLAN_LINEAR_EXISTING_PROMPT: &str = r#"You are a task planner for an EXISTING codebase. Output ONLY raw JSON, no markdown fences, no explanation.
 
 Rules for LINEAR plans (no branching, no decisions):
 - Root node: type "task" — reads and understands the existing codebase (do NOT scaffold or re-init)
-- Children are sequential "agent" nodes — each does one step
+- The tree is a single chain of "agent" nodes: task > agent > agent > ...
+- Each node has at most one child
 - NO "decision", "merge", or "final" nodes
 - Max 3 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo", "Dark Mode"), NOT the structural role. Child labels describe specific steps.
 
 Example for user task "Add undo/redo to the calculator":
-{"root":{"label":"Undo/Redo","prompt":"Read the project structure and understand how state is managed. Do NOT scaffold.","node_type":"task","children":[{"label":"Implement Undo/Redo","prompt":"Add undo/redo using a history stack, with Ctrl+Z/Ctrl+Y keyboard shortcuts.","node_type":"agent","children":[]}]}}"#;
+{"root":{"label":"Undo/Redo","prompt":"Read the project structure and understand how state is managed. Do NOT scaffold.","node_type":"task","children":[{"label":"Implement Undo/Redo","prompt":"Add undo/redo using a history stack, with Ctrl+Z/Ctrl+Y keyboard shortcuts.","node_type":"agent","children":[{"label":"Polish Undo/Redo","prompt":"Add tests and verify the implementation fits the existing codebase.","node_type":"agent","children":[]}]}]}}"#;
 
 #[derive(Debug, Clone)]
 struct PlannerInvocation {
@@ -119,6 +121,55 @@ fn planner_system_prompt(project_mode: &str, complexity: &str) -> &'static str {
         ("linear", _) => PLAN_LINEAR_PROMPT,
         (_, "existing") => PLAN_SYSTEM_PROMPT_EXISTING,
         _ => PLAN_SYSTEM_PROMPT,
+    }
+}
+
+/// Normalize a generated plan for the requested complexity.
+///
+/// Linear plans are forced into a single chain so the canvas renders as a
+/// straightforward top-down path instead of sibling branches.
+pub fn normalize_plan_for_complexity(plan: GeneratedPlan, complexity: &str) -> GeneratedPlan {
+    const MAX_LINEAR_AGENT_STEPS: usize = 2;
+
+    if complexity != "linear" {
+        return plan;
+    }
+
+    fn collect_linear_steps(node: &PlanNode, steps: &mut Vec<PlanNode>) {
+        for child in &node.children {
+            steps.push(PlanNode {
+                label: child.label.clone(),
+                prompt: child.prompt.clone(),
+                node_type: "agent".to_string(),
+                children: Vec::new(),
+            });
+            collect_linear_steps(child, steps);
+        }
+    }
+
+    fn chain_linear_steps(steps: Vec<PlanNode>) -> Vec<PlanNode> {
+        let mut next_child: Option<PlanNode> = None;
+
+        for mut step in steps.into_iter().rev() {
+            step.children = next_child.into_iter().collect();
+            next_child = Some(step);
+        }
+
+        next_child.into_iter().collect()
+    }
+
+    let GeneratedPlan { root } = plan;
+    let mut steps = Vec::new();
+    collect_linear_steps(&root, &mut steps);
+    let children = chain_linear_steps(steps.into_iter().take(MAX_LINEAR_AGENT_STEPS).collect());
+
+    GeneratedPlan {
+        root: PlanNode {
+            label: root.label,
+            prompt: root.prompt,
+            node_type: "task".to_string(),
+            children,
+        },
     }
 }
 
@@ -382,6 +433,7 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode
             exit_code: None,
             node_type: Some(plan_node.node_type.clone()),
             scheduled_at: None,
+            started_at: None,
             created_at: now,
             updated_at: now,
         });
@@ -399,7 +451,10 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode
 mod tests {
     use std::fs;
 
-    use super::{build_planner_invocation, cleanup_output_file};
+    use super::{
+        build_planner_invocation, cleanup_output_file, normalize_plan_for_complexity, GeneratedPlan,
+        PlanNode,
+    };
     use crate::models::AgentType;
 
     #[test]
@@ -430,6 +485,81 @@ mod tests {
             .iter()
             .any(|arg| arg == "--output-last-message"));
         assert!(invocation.output_file.is_some());
+    }
+
+    #[test]
+    fn linear_plan_normalization_flattens_tree_into_chain() {
+        let plan = GeneratedPlan {
+            root: PlanNode {
+                label: "Root".to_string(),
+                prompt: "Read the codebase".to_string(),
+                node_type: "task".to_string(),
+                children: vec![
+                    PlanNode {
+                        label: "First step".to_string(),
+                        prompt: "Do the first thing".to_string(),
+                        node_type: "agent".to_string(),
+                        children: vec![PlanNode {
+                            label: "Nested step".to_string(),
+                            prompt: "Do a nested thing".to_string(),
+                            node_type: "agent".to_string(),
+                            children: vec![],
+                        }],
+                    },
+                    PlanNode {
+                        label: "Second step".to_string(),
+                        prompt: "Do the second thing".to_string(),
+                        node_type: "agent".to_string(),
+                        children: vec![],
+                    },
+                ],
+            },
+        };
+
+        let normalized = normalize_plan_for_complexity(plan, "linear");
+
+        let mut labels = Vec::new();
+        let mut current = &normalized.root;
+        while let Some(child) = current.children.first() {
+            assert_eq!(current.children.len(), 1);
+            labels.push(child.label.clone());
+            current = child;
+        }
+
+        assert_eq!(labels, vec!["First step", "Nested step"]);
+        assert!(normalized.root.children[0].children[0].children.is_empty());
+        assert_eq!(normalized.root.node_type, "task");
+    }
+
+    #[test]
+    fn branching_plan_normalization_is_noop() {
+        let plan = GeneratedPlan {
+            root: PlanNode {
+                label: "Root".to_string(),
+                prompt: "Read the codebase".to_string(),
+                node_type: "task".to_string(),
+                children: vec![
+                    PlanNode {
+                        label: "Branch A".to_string(),
+                        prompt: "First branch".to_string(),
+                        node_type: "agent".to_string(),
+                        children: vec![],
+                    },
+                    PlanNode {
+                        label: "Branch B".to_string(),
+                        prompt: "Second branch".to_string(),
+                        node_type: "agent".to_string(),
+                        children: vec![],
+                    },
+                ],
+            },
+        };
+
+        let normalized = normalize_plan_for_complexity(plan, "branching");
+
+        assert_eq!(normalized.root.children.len(), 2);
+        assert_eq!(normalized.root.children[0].label, "Branch A");
+        assert_eq!(normalized.root.children[1].label, "Branch B");
     }
 
     #[test]

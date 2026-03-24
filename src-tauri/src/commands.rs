@@ -736,6 +736,7 @@ pub async fn run_project_now(
         exit_code: None,
         node_type: Some("task".to_string()),
         scheduled_at: None,
+        started_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -899,6 +900,7 @@ pub async fn fork_node(
         exit_code: None,
         node_type: Some("agent".to_string()),
         scheduled_at: None,
+        started_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -948,6 +950,7 @@ pub async fn create_structural_node(
         exit_code: None,
         node_type: Some(node_type),
         scheduled_at: None,
+        started_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -1253,6 +1256,7 @@ pub async fn create_root_node(
         exit_code: None,
         node_type: Some("task".to_string()),
         scheduled_at: None,
+        started_at: None,
         created_at: now,
         updated_at: now,
     };
@@ -1999,7 +2003,8 @@ pub async fn reset_node_status(
         let conn = db_reset.lock().map_err(|e| format!("DB lock error: {e}"))?;
         conn.execute(
             "UPDATE decision_nodes
-             SET status=?1, exit_code=NULL, worktree_path=NULL, commit_hash=NULL, updated_at=?2
+             SET status=?1, exit_code=NULL, worktree_path=NULL, commit_hash=NULL,
+                 started_at=NULL, updated_at=?2
              WHERE id=?3",
             rusqlite::params![NodeStatus::Pending.as_str(), db::now_unix(), nid],
         )
@@ -2067,6 +2072,9 @@ pub async fn generate_plan(
         &repo_path,
     )
     .await?;
+
+    // Linear plans are normalized into a single chain so the canvas stays straightforward.
+    let plan = plan_generator::normalize_plan_for_complexity(plan, complexity_str);
 
     // Convert to nodes
     let nodes = plan_generator::plan_to_nodes(&plan, &project_id);

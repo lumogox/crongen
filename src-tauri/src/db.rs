@@ -55,6 +55,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
             exit_code       INTEGER,
             node_type       TEXT,
             scheduled_at    TEXT,
+            started_at      INTEGER,
             created_at      INTEGER NOT NULL,
             updated_at      INTEGER NOT NULL
         );
@@ -62,6 +63,20 @@ pub fn db_init(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_nodes_project ON decision_nodes(project_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_parent ON decision_nodes(parent_id);
         ",
+    )?;
+
+    if !table_has_column(conn, "decision_nodes", "started_at")? {
+        conn.execute_batch("ALTER TABLE decision_nodes ADD COLUMN started_at INTEGER;")?;
+    }
+
+    // Backfill nodes that were already running before the started_at column
+    // existed. Their updated_at is the best available approximation for the
+    // moment execution began.
+    conn.execute(
+        "UPDATE decision_nodes
+         SET started_at = updated_at
+         WHERE started_at IS NULL AND status = 'running'",
+        [],
     )?;
 
     conn.execute_batch(
@@ -77,7 +92,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
         ",
     )?;
 
-    conn.pragma_update(None, "user_version", 1)?;
+    conn.pragma_update(None, "user_version", 2)?;
 
     Ok(())
 }
@@ -160,6 +175,7 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
         exit_code: row.get("exit_code")?,
         node_type: row.get("node_type")?,
         scheduled_at: row.get("scheduled_at")?,
+        started_at: row.get("started_at")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -274,8 +290,8 @@ pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
     conn.execute(
         "INSERT INTO decision_nodes (id, project_id, parent_id, label, prompt,
          branch_name, worktree_path, commit_hash, status, exit_code,
-         node_type, scheduled_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+         node_type, scheduled_at, started_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             node.id,
             node.project_id,
@@ -289,6 +305,7 @@ pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
             node.exit_code,
             node.node_type,
             node.scheduled_at,
+            node.started_at,
             node.created_at,
             node.updated_at,
         ],
@@ -301,7 +318,7 @@ pub fn node_get_tree(conn: &Connection, project_id: &str) -> Result<Vec<Decision
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, created_at, updated_at
+                node_type, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE project_id = ?1
          ORDER BY created_at ASC",
     )?;
@@ -317,7 +334,7 @@ pub fn node_get_by_id(conn: &Connection, id: &str) -> Result<DecisionNode> {
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, created_at, updated_at
+                node_type, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE id = ?1",
     )?;
 
@@ -336,8 +353,16 @@ pub fn node_update_status(
 ) -> Result<()> {
     let now = now_unix();
     conn.execute(
-        "UPDATE decision_nodes SET status=?1, exit_code=?2, updated_at=?3 WHERE id=?4",
-        params![status.as_str(), exit_code, now, id],
+        "UPDATE decision_nodes
+         SET status=?1,
+             exit_code=?2,
+             started_at = CASE
+                 WHEN ?1 = 'running' AND started_at IS NULL THEN ?3
+                 ELSE started_at
+             END,
+             updated_at=?4
+         WHERE id=?5",
+        params![status.as_str(), exit_code, now, now, id],
     )?;
     Ok(())
 }
@@ -389,7 +414,7 @@ pub fn node_get_roots(conn: &Connection, project_id: &str) -> Result<Vec<Decisio
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, created_at, updated_at
+                node_type, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE project_id = ?1 AND parent_id IS NULL
          ORDER BY created_at DESC",
     )?;
@@ -405,7 +430,7 @@ pub fn node_get_children(conn: &Connection, parent_id: &str) -> Result<Vec<Decis
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, created_at, updated_at
+                node_type, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE parent_id = ?1
          ORDER BY created_at ASC",
     )?;
@@ -427,7 +452,7 @@ pub fn node_get_subtree(conn: &Connection, root_id: &str) -> Result<Vec<Decision
         )
         SELECT dn.id, dn.project_id, dn.parent_id, dn.label, dn.prompt,
                dn.branch_name, dn.worktree_path, dn.commit_hash, dn.status,
-               dn.exit_code, dn.node_type, dn.scheduled_at, dn.created_at, dn.updated_at
+               dn.exit_code, dn.node_type, dn.scheduled_at, dn.started_at, dn.created_at, dn.updated_at
         FROM decision_nodes dn
         JOIN subtree s ON dn.id = s.nid
         ORDER BY dn.created_at ASC",
