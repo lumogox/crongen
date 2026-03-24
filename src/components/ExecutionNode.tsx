@@ -123,20 +123,20 @@ function ExecutionNodeInner({
       onClick: () => onCreateStructuralNode(node.id, "agent"),
     });
   } else if (visualType === "agent" && canAddChildren) {
+    actions.push({
+      label: "Add agent",
+      icon: Plus,
+      tone: "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400/50",
+      onClick: () => onCreateStructuralNode(node.id, "agent"),
+    });
     if (flowMode !== "linear") {
       actions.push({
-        label: "Add agent",
-        icon: Plus,
-        tone: "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400/50",
-        onClick: () => onCreateStructuralNode(node.id, "agent"),
+        label: "Add review",
+        icon: MergeIcon,
+        tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
+        onClick: () => onCreateStructuralNode(node.id, "merge"),
       });
     }
-    actions.push({
-      label: "Add review",
-      icon: MergeIcon,
-      tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
-      onClick: () => onCreateStructuralNode(node.id, "merge"),
-    });
     if (node.status === "completed") {
       actions.push({
         label: "Merge",

@@ -7,7 +7,11 @@ import type {
   CodexModelCatalog,
   CodexModelOption,
 } from "../types";
-import { BUILT_IN_AGENT_TYPES, getAgentLabel } from "../lib/agent-templates";
+import {
+  BUILT_IN_AGENT_TYPES,
+  FAST_CODEX_MODEL,
+  getAgentLabel,
+} from "../lib/agent-templates";
 import { getCodexModelCatalog } from "../lib/tauri-commands";
 import {
   Dialog,
@@ -92,6 +96,8 @@ const PROVIDER_THEMES: Record<AgentType, ProviderTheme> = {
     chips: ["Custom"],
   },
 };
+
+const SLOW_CODEX_MODELS = new Set(["gpt-5.4", "gpt-5.4-mini"]);
 
 function statusTone(status: AgentProviderReadiness["status"]) {
   switch (status) {
@@ -258,24 +264,36 @@ function RoleSocket({
                     ? "Codex cache unavailable. Manual slug entry still works."
                     : "Use Codex's local catalog when available, or enter a manual slug."}
               </div>
-              {hasCodexCatalog ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {hasCodexCatalog ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (useManualCodexModel) {
+                        setUseManualCodexModel(false);
+                        if (!codexModel) {
+                          onModelChange("");
+                        }
+                        return;
+                      }
+                      setUseManualCodexModel(true);
+                    }}
+                    className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300 transition-colors hover:bg-white/10"
+                  >
+                    {useManualCodexModel ? "Back to catalog" : "Use custom slug"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {
-                    if (useManualCodexModel) {
-                      setUseManualCodexModel(false);
-                      if (!codexModel) {
-                        onModelChange("");
-                      }
-                      return;
-                    }
                     setUseManualCodexModel(true);
+                    onModelChange(FAST_CODEX_MODEL);
                   }}
-                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300 transition-colors hover:bg-white/10"
+                  className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100 transition-colors hover:bg-emerald-500/20"
                 >
-                  {useManualCodexModel ? "Back to catalog" : "Use custom slug"}
+                  Use fast model
                 </button>
-              ) : null}
+              </div>
             </div>
 
             {codexModel ? (
@@ -285,6 +303,18 @@ function RoleSocket({
                 Using a manual Codex model slug that is not present in the local cache.
               </div>
             ) : null}
+
+            {SLOW_CODEX_MODELS.has(modelValue) && (
+              <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+                This is a quality-first model. For short or routine tasks, the fast Codex model will feel much snappier.
+              </div>
+            )}
+
+            {modelValue === FAST_CODEX_MODEL && (
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+                Fast Codex model selected. Best for simple tasks, quick iterations, and lower-latency runs.
+              </div>
+            )}
           </div>
         ) : (
           <Input

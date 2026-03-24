@@ -27,6 +27,7 @@ interface InspectorPanelProps {
   node: DecisionNode;
   project: Project;
   allNodes: DecisionNode[];
+  flowMode: "linear" | "branching";
   onClose: () => void;
   onFork: (nodeId: string) => void;
   onMerge: (nodeId: string) => void;
@@ -65,6 +66,7 @@ export function InspectorPanel({
   node,
   project,
   allNodes,
+  flowMode,
   onClose: _onClose,
   onFork: _onFork,
   onMerge,
@@ -328,14 +330,16 @@ export function InspectorPanel({
               {/* Task (pending or terminal): Add decision, Add agent */}
               {visualType === "task" && (isTerminal || node.status === "pending") && (
                 <>
-                  <Button
-                    variant="outline"
-                    onClick={() => onCreateStructuralNode?.(node.id, "decision")}
-                    className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                  >
-                    <GitFork className="mr-2 h-4 w-4" />
-                    Add decision point
-                  </Button>
+                  {flowMode !== "linear" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onCreateStructuralNode?.(node.id, "decision")}
+                      className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                    >
+                      <GitFork className="mr-2 h-4 w-4" />
+                      Add decision point
+                    </Button>
+                  )}
                   <Button
                     onClick={() => onCreateStructuralNode?.(node.id, "agent")}
                     className="justify-start rounded-2xl bg-slate-100 text-slate-950 hover:bg-slate-200"
@@ -365,14 +369,16 @@ export function InspectorPanel({
                     <Plus className="mr-2 h-4 w-4" />
                     Add agent node
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => onCreateStructuralNode?.(node.id, "merge")}
-                    className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                  >
-                    <GitMerge className="mr-2 h-4 w-4" />
-                    Add review step
-                  </Button>
+                  {flowMode !== "linear" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onCreateStructuralNode?.(node.id, "merge")}
+                      className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                    >
+                      <GitMerge className="mr-2 h-4 w-4" />
+                      Add review step
+                    </Button>
+                  )}
                   {node.status === "completed" && (
                     <Button
                       variant="outline"

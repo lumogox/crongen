@@ -23,6 +23,8 @@ function codexApprovalPreviewFlag(mode?: string | null): string | null {
   return !mode || mode === "full-auto" ? "--full-auto" : null;
 }
 
+export const FAST_CODEX_MODEL = "gpt-5-codex-mini";
+
 export const CLAUDE_CODE_TEMPLATE: AgentTypeTemplate = {
   type: "claude_code",
   label: "Claude Code",
@@ -74,7 +76,7 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
   envVar: null,
   defaultConfig: {
     type: "codex",
-    model: null,
+    model: FAST_CODEX_MODEL,
     sandbox: null,
     approval_mode: null,
     skip_git_check: false,

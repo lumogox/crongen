@@ -84,7 +84,7 @@ export function SessionModal({
                 ? "Design the execution tree manually, then run nodes when ready."
                 : activeAgentLabel === "Unconfigured"
                   ? "Describe the task and connect a planning agent first."
-                  : `Describe the task and ${planningAgentLabel} will generate an execution plan.`}
+                  : `Describe the task and ${planningAgentLabel} will generate a single-path execution plan.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -188,7 +188,7 @@ export function SessionModal({
                 mode === "quick"
                   ? "e.g. Add undo/redo to the calculator using a history stack"
                   : mode === "generate"
-                    ? `Describe the task in detail. ${planningAgentLabel} will break it down into an execution tree.`
+                    ? `Describe the task in detail. ${planningAgentLabel} will break it down into a single execution chain.`
                     : "What should the agent accomplish?"
               }
               rows={mode === "quick" ? 3 : mode === "generate" ? 6 : 4}
@@ -211,7 +211,7 @@ export function SessionModal({
                   }`}
                 >
                   <div className="text-xs font-medium text-slate-100">Linear</div>
-                  <div className="text-[11px] text-slate-500">Step-by-step, no branching</div>
+                  <div className="text-[11px] text-slate-500">One straight chain, no branches</div>
                 </button>
                 <button
                   type="button"

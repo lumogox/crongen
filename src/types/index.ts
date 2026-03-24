@@ -105,6 +105,7 @@ export interface DecisionNode {
   exit_code: number | null;
   node_type: string | null;
   scheduled_at: string | null; // ISO 8601 — only meaningful on root (session) nodes
+  started_at: number | null;
   created_at: number;
   updated_at: number;
 }

@@ -53,6 +53,7 @@ import { SessionModal } from "./components/SessionModal";
 import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
 import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { inferFlowModeFromNodes } from "./lib/flow-mode";
 
 const DEFAULT_SETTINGS: AppSettings = {
   debug_mode: false,
@@ -132,6 +133,7 @@ function App() {
     if (!selectedProjectId) {
       setSessions([]);
       setSelectedSessionId(null);
+      setFlowMode("branching");
       return;
     }
     getRootNodes(selectedProjectId)
@@ -168,6 +170,7 @@ function App() {
       setTreeNodes([]);
       setSelectedNodeId(null);
       setOrchestratorStatus(null);
+      setFlowMode("branching");
       return;
     }
     let cancelled = false;
@@ -177,13 +180,16 @@ function App() {
     if (!selectedSessionId) {
       // No session selected — show empty canvas
       setTreeNodes([]);
+      setFlowMode("branching");
       setTreeLoading(false);
       return;
     }
     getDecisionTree(selectedProjectId)
       .then((nodes) => {
         if (cancelled) return;
-        setTreeNodes(filterSessionSubtree(nodes, selectedSessionId));
+        const sessionNodes = filterSessionSubtree(nodes, selectedSessionId);
+        setFlowMode(inferFlowModeFromNodes(sessionNodes));
+        setTreeNodes(sessionNodes);
         // Restore orchestrator status if this session has an active run
         getOrchestratorStatus(selectedSessionId)
           .then((status) => { if (!cancelled && status) setOrchestratorStatus(status); })
@@ -591,6 +597,7 @@ function App() {
       if (!project || !guardAgentRole("execution", project.agent_type, "Execution")) return;
       try {
         const rootNode = await runProjectNow(projectId);
+        setFlowMode(inferFlowModeFromNodes([rootNode]));
         setSessions((prev) => [rootNode, ...prev.filter((session) => session.id !== rootNode.id)]);
         setSelectedSessionId(rootNode.id);
         setTreeNodes([rootNode]);
@@ -730,6 +737,7 @@ function App() {
       if (!selectedProjectId) return;
       try {
         const rootNode = await createRootNode(selectedProjectId, label, prompt);
+        setFlowMode(inferFlowModeFromNodes([rootNode]));
         setSessions((prev) => [rootNode, ...prev]);
         setTreeNodes([rootNode]);
         setSelectedSessionId(rootNode.id);
@@ -871,6 +879,7 @@ function App() {
         rootNode = await createRootNode(selectedProjectId, label, prompt);
         // Auto-run the node
         const updated = await runNode(rootNode.id);
+        setFlowMode(inferFlowModeFromNodes([updated]));
         setSessions((prev) => [updated, ...prev.filter((session) => session.id !== updated.id)]);
         setSelectedSessionId(updated.id);
         setTreeNodes([updated]);
@@ -899,6 +908,7 @@ function App() {
       try {
         setIsGeneratingPlan(true);
         const nodes = await generatePlan(selectedProjectId, prompt, complexity);
+        setFlowMode(inferFlowModeFromNodes(nodes));
         // Replace the current tree with the generated session plan.
         setTreeNodes(nodes);
         if (nodes.length > 0) {
@@ -976,7 +986,9 @@ function App() {
     }
     if (selectedProjectId) {
       const updated = await getDecisionTree(selectedProjectId);
-      setTreeNodes(filterSessionSubtree(updated, selectedSessionId));
+      const sessionNodes = filterSessionSubtree(updated, selectedSessionId);
+      setFlowMode(inferFlowModeFromNodes(sessionNodes));
+      setTreeNodes(sessionNodes);
     }
   }, [selectedProjectId, selectedSessionId]);
 

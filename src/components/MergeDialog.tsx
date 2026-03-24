@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   GitMerge,
   GitBranch,
@@ -20,6 +20,7 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { cn } from "@/lib/utils";
 import type { DecisionNode, MergeResult } from "../types";
 import {
   getMergePreview,
@@ -30,6 +31,26 @@ import {
 import type { MergePreview } from "../lib/tauri-commands";
 
 type MergeStep = "preview" | "merging" | "success" | "conflict" | "error";
+
+const MERGE_DIALOG_STYLE = {
+  width: "min(96vw, 72rem)",
+  maxWidth: "min(96vw, 72rem)",
+  maxHeight: "calc(100vh - 2rem)",
+};
+
+function DialogStepFrame({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-h-0 flex-col overflow-hidden", className)}>
+      {children}
+    </div>
+  );
+}
 
 interface MergeDialogProps {
   open: boolean;
@@ -152,7 +173,8 @@ export function MergeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-lg border-white/10 bg-slate-950 text-slate-100"
+        className="overflow-hidden rounded-2xl border-white/10 bg-slate-950 p-0 text-slate-100 shadow-2xl"
+        style={MERGE_DIALOG_STYLE}
         showCloseButton={step !== "merging"}
       >
         {step === "preview" && (
@@ -233,8 +255,8 @@ function PreviewStep({
   onCancel: () => void;
 }) {
   return (
-    <>
-      <DialogHeader>
+    <DialogStepFrame className="min-h-[26rem]">
+      <DialogHeader className="border-b border-white/10 px-6 py-5 text-left">
         <DialogTitle className="flex items-center gap-2">
           <Rocket className="h-5 w-5 text-violet-400" />
           Ship it
@@ -244,124 +266,135 @@ function PreviewStep({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-4 py-2">
-        {/* Source -> Target */}
-        <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">
-              Source
-            </div>
-            <div className="mt-0.5 truncate font-mono text-sm text-slate-200">
-              {terminalNode.branch_name}
-            </div>
-            {terminalNode.commit_hash && (
-              <div className="truncate font-mono text-[11px] text-slate-500">
-                {terminalNode.commit_hash.slice(0, 8)}
-              </div>
-            )}
-          </div>
-          <ArrowRight className="h-4 w-4 shrink-0 text-slate-500" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">
-              Target
-            </div>
-            <div className="mt-0.5 font-mono text-sm text-slate-200">
-              {currentBranch}
-            </div>
-          </div>
-        </div>
-
-        {/* Files changed */}
-        {loading ? (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Loading preview...
-          </div>
-        ) : error ? (
-          <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            {error}
-          </div>
-        ) : preview && preview.files_changed.length > 0 ? (
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-            <div className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500">
-              <FileText className="h-3 w-3" />
-              {preview.files_changed.length} file
-              {preview.files_changed.length === 1 ? "" : "s"} changed
-              {preview.commit_count > 0 &&
-                ` · ${preview.commit_count} commit${preview.commit_count === 1 ? "" : "s"}`}
-            </div>
-            <div className="max-h-32 space-y-0.5 overflow-y-auto">
-              {preview.files_changed.map((f) => (
-                <div
-                  key={f}
-                  className="truncate font-mono text-[11px] text-slate-400"
-                >
-                  {f}
+      <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                  Source
                 </div>
-              ))}
+                <div className="mt-0.5 truncate font-mono text-sm text-slate-200">
+                  {terminalNode.branch_name}
+                </div>
+                {terminalNode.commit_hash && (
+                  <div className="truncate font-mono text-[11px] text-slate-500">
+                    {terminalNode.commit_hash.slice(0, 8)}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-center py-1 text-slate-500">
+                <ArrowRight className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">
+                  Target
+                </div>
+                <div className="mt-0.5 font-mono text-sm text-slate-200">
+                  {currentBranch}
+                </div>
+              </div>
             </div>
           </div>
-        ) : preview ? (
-          <div className="text-xs text-slate-500">
-            No file changes detected
-          </div>
-        ) : null}
 
-        {/* Action selector */}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            onClick={() => onActionChange("merge")}
-            className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
-              action === "merge"
-                ? "border-emerald-400/30 bg-emerald-500/10"
-                : "border-white/10 bg-white/[0.03] hover:border-white/20"
-            }`}
-          >
-            <GitMerge
-              className={`h-4 w-4 ${action === "merge" ? "text-emerald-400" : "text-slate-500"}`}
-            />
-            <span
-              className={`text-xs font-medium ${action === "merge" ? "text-emerald-200" : "text-slate-300"}`}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              onClick={() => onActionChange("merge")}
+              className={`flex min-h-[5rem] flex-col items-start gap-1.5 rounded-xl border p-4 text-left transition-colors ${
+                action === "merge"
+                  ? "border-emerald-400/30 bg-emerald-500/10"
+                  : "border-white/10 bg-white/[0.03] hover:border-white/20"
+              }`}
             >
-              Merge to {currentBranch}
-            </span>
-          </button>
-          <button
-            onClick={() => onActionChange("branch")}
-            className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors ${
-              action === "branch"
-                ? "border-sky-400/30 bg-sky-500/10"
-                : "border-white/10 bg-white/[0.03] hover:border-white/20"
-            }`}
-          >
-            <GitBranch
-              className={`h-4 w-4 ${action === "branch" ? "text-sky-400" : "text-slate-500"}`}
-            />
-            <span
-              className={`text-xs font-medium ${action === "branch" ? "text-sky-200" : "text-slate-300"}`}
+              <GitMerge
+                className={`h-4 w-4 ${action === "merge" ? "text-emerald-400" : "text-slate-500"}`}
+              />
+              <span
+                className={`text-xs font-medium ${action === "merge" ? "text-emerald-200" : "text-slate-300"}`}
+              >
+                Merge to {currentBranch}
+              </span>
+            </button>
+            <button
+              onClick={() => onActionChange("branch")}
+              className={`flex min-h-[5rem] flex-col items-start gap-1.5 rounded-xl border p-4 text-left transition-colors ${
+                action === "branch"
+                  ? "border-sky-400/30 bg-sky-500/10"
+                  : "border-white/10 bg-white/[0.03] hover:border-white/20"
+              }`}
             >
-              Create feature branch
-            </span>
-          </button>
+              <GitBranch
+                className={`h-4 w-4 ${action === "branch" ? "text-sky-400" : "text-slate-500"}`}
+              />
+              <span
+                className={`text-xs font-medium ${action === "branch" ? "text-sky-200" : "text-slate-300"}`}
+              >
+                Create feature branch
+              </span>
+            </button>
+          </div>
+
+          {action === "branch" && (
+            <div className="rounded-xl border border-sky-400/20 bg-sky-500/5 p-4">
+              <div className="text-[10px] uppercase tracking-wider text-sky-300/80">
+                Branch name
+              </div>
+              <input
+                type="text"
+                value={branchName}
+                onChange={(e) => onBranchNameChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && branchName.trim()) onCreateBranch();
+                }}
+                placeholder="feature/my-branch"
+                autoFocus
+                className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-400/40"
+              />
+            </div>
+          )}
         </div>
 
-        {/* Branch name input */}
-        {action === "branch" && (
-          <input
-            type="text"
-            value={branchName}
-            onChange={(e) => onBranchNameChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && branchName.trim()) onCreateBranch();
-            }}
-            placeholder="feature/my-branch"
-            autoFocus
-            className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-400/40"
-          />
-        )}
+        <div className="flex min-h-0 flex-col">
+          {loading ? (
+            <div className="flex h-full min-h-[14rem] items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] px-4 py-5 text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Loading preview...
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex h-full min-h-[14rem] items-center rounded-xl border border-amber-400/20 bg-amber-500/10 px-4 py-5 text-xs text-amber-200">
+              {error}
+            </div>
+          ) : preview && preview.files_changed.length > 0 ? (
+            <div className="flex h-full min-h-[14rem] flex-col rounded-xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-wider text-slate-500">
+                <FileText className="h-3 w-3" />
+                {preview.files_changed.length} file
+                {preview.files_changed.length === 1 ? "" : "s"} changed
+                {preview.commit_count > 0 &&
+                  ` · ${preview.commit_count} commit${preview.commit_count === 1 ? "" : "s"}`}
+              </div>
+              <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-1">
+                {preview.files_changed.map((f) => (
+                  <div
+                    key={f}
+                    className="truncate font-mono text-[11px] text-slate-400"
+                  >
+                    {f}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : preview ? (
+            <div className="flex h-full min-h-[14rem] items-center rounded-xl border border-white/10 bg-white/[0.03] px-4 py-5 text-xs text-slate-500">
+              No file changes detected
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <DialogFooter>
+      <DialogFooter className="border-t border-white/10 px-6 py-4">
         <Button
           variant="outline"
           onClick={onCancel}
@@ -388,7 +421,7 @@ function PreviewStep({
           </Button>
         )}
       </DialogFooter>
-    </>
+    </DialogStepFrame>
   );
 }
 
@@ -415,15 +448,15 @@ function MergingStep({
     : MERGE_STEP_LABELS.map((s) => s.replace("{target}", currentBranch));
 
   return (
-    <>
-      <DialogHeader>
+    <DialogStepFrame className="min-h-[18rem]">
+      <DialogHeader className="border-b border-white/10 px-6 py-5">
         <DialogTitle className="flex items-center gap-2">
           <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
           {isCreatingBranch ? "Creating branch..." : "Merging..."}
         </DialogTitle>
       </DialogHeader>
 
-      <div className="space-y-3 py-4">
+      <div className="space-y-3 px-6 py-5">
         {steps.map((label, i) => {
           const status: "done" | "active" | "pending" =
             i < stepIndex ? "done" : i === stepIndex ? "active" : "pending";
@@ -447,7 +480,7 @@ function MergingStep({
           );
         })}
       </div>
-    </>
+    </DialogStepFrame>
   );
 }
 
@@ -487,8 +520,8 @@ function SuccessStep({
   onDone: () => void;
 }) {
   return (
-    <>
-      <DialogHeader>
+    <DialogStepFrame className="min-h-[18rem]">
+      <DialogHeader className="border-b border-white/10 px-6 py-5">
         <div className="flex flex-col items-center gap-3 pt-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/20">
             <CheckCircle2 className="h-7 w-7 text-emerald-400" />
@@ -499,7 +532,7 @@ function SuccessStep({
         </div>
       </DialogHeader>
 
-      <div className="space-y-3 py-2">
+      <div className="space-y-3 px-6 py-5">
         {/* Summary */}
         <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
           {createdBranch ? (
@@ -557,7 +590,7 @@ function SuccessStep({
         )}
       </div>
 
-      <DialogFooter>
+      <DialogFooter className="border-t border-white/10 px-6 py-4">
         <Button
           onClick={onDone}
           className="bg-emerald-600 text-white hover:bg-emerald-500"
@@ -565,7 +598,7 @@ function SuccessStep({
           Done
         </Button>
       </DialogFooter>
-    </>
+    </DialogStepFrame>
   );
 }
 
@@ -583,8 +616,8 @@ function ConflictStep({
   onClose: () => void;
 }) {
   return (
-    <>
-      <DialogHeader>
+    <DialogStepFrame className="min-h-[18rem]">
+      <DialogHeader className="border-b border-white/10 px-6 py-5">
         <div className="flex flex-col items-center gap-3 pt-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/20">
             <AlertTriangle className="h-7 w-7 text-amber-400" />
@@ -596,7 +629,7 @@ function ConflictStep({
         </div>
       </DialogHeader>
 
-      <div className="py-2">
+      <div className="px-6 py-5">
         {mergeResult && mergeResult.conflict_files.length > 0 && (
           <div className="max-h-48 space-y-0.5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-3">
             {mergeResult.conflict_files.map((f) => (
@@ -612,7 +645,7 @@ function ConflictStep({
         )}
       </div>
 
-      <DialogFooter>
+      <DialogFooter className="border-t border-white/10 px-6 py-4">
         <Button
           variant="outline"
           onClick={onClose}
@@ -635,7 +668,7 @@ function ConflictStep({
           Retry merge
         </Button>
       </DialogFooter>
-    </>
+    </DialogStepFrame>
   );
 }
 
@@ -649,8 +682,8 @@ function ErrorStep({
   onClose: () => void;
 }) {
   return (
-    <>
-      <DialogHeader>
+    <DialogStepFrame className="min-h-[16rem]">
+      <DialogHeader className="border-b border-white/10 px-6 py-5">
         <div className="flex flex-col items-center gap-3 pt-2">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20">
             <XCircle className="h-7 w-7 text-rose-400" />
@@ -659,13 +692,13 @@ function ErrorStep({
         </div>
       </DialogHeader>
 
-      <div className="py-2">
+      <div className="px-6 py-5">
         <div className="break-words rounded-xl border border-rose-400/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-200">
           {error}
         </div>
       </div>
 
-      <DialogFooter>
+      <DialogFooter className="border-t border-white/10 px-6 py-4">
         <Button
           onClick={onClose}
           variant="outline"
@@ -674,6 +707,6 @@ function ErrorStep({
           Close
         </Button>
       </DialogFooter>
-    </>
+    </DialogStepFrame>
   );
 }

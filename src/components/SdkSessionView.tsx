@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSdkSession } from "../hooks/useSdkSession";
 import type { NodeStatus } from "../types";
 import type {
@@ -31,22 +31,49 @@ export function SdkSessionView({ sessionId, status }: SdkSessionViewProps) {
   });
 
   const showPlaceholder = !effectiveSessionId;
+  const activeModel = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const event = events[i];
+      if (
+        event.type === "system" &&
+        typeof event.model === "string" &&
+        event.model.trim().length > 0
+      ) {
+        return event.model.trim();
+      }
+    }
+    return null;
+  }, [events]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-bg-base">
-      <div
-        ref={containerRef}
-        className="h-full w-full overflow-y-auto px-4 py-3 space-y-2"
-      >
-        {events.map((event, i) => (
-          <EventRenderer key={i} event={event} />
-        ))}
-        {status === "running" && events.length > 0 && (
-          <div className="flex items-center gap-2 py-2">
-            <span className="inline-block size-1.5 rounded-full bg-node-running animate-pulse" />
-            <span className="text-[11px] text-text-muted">Processing...</span>
+      <div className="flex h-full min-h-0 w-full flex-col">
+        {activeModel && (
+          <div className="border-b border-border-subtle bg-bg-surface/80 px-4 py-2 backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                Current model
+              </span>
+              <span className="max-w-[70%] truncate font-mono text-[12px] text-text-primary">
+                {activeModel}
+              </span>
+            </div>
           </div>
         )}
+        <div
+          ref={containerRef}
+          className="h-full w-full min-h-0 overflow-y-auto px-4 py-3 space-y-2"
+        >
+          {events.map((event, i) => (
+            <EventRenderer key={i} event={event} />
+          ))}
+          {status === "running" && events.length > 0 && (
+            <div className="flex items-center gap-2 py-2">
+              <span className="inline-block size-1.5 rounded-full bg-node-running animate-pulse" />
+              <span className="text-[11px] text-text-muted">Processing...</span>
+            </div>
+          )}
+        </div>
       </div>
       {showPlaceholder && (
         <div className="absolute inset-0 flex items-center justify-center">

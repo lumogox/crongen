@@ -36,6 +36,17 @@ function useLiveClock(hasRunning: boolean): number {
   return now;
 }
 
+function getNodeElapsedSeconds(node: DecisionNode, now: number): number | null {
+  if (node.status === "pending") return null;
+
+  const start = node.started_at ?? (node.status === "running" ? node.updated_at : node.created_at);
+  if (node.status === "running") {
+    return Math.max(0, now - start);
+  }
+
+  return Math.max(0, node.updated_at - start);
+}
+
 interface OrchestratorActivityProps {
   agentType: AgentType;
   treeNodes: DecisionNode[];
@@ -173,11 +184,10 @@ export function OrchestratorActivity({
                 {node.label}
               </span>
               <span className={`text-[11px] tabular-nums ${statusColor[node.status] ?? "text-slate-500"}`}>
-                {node.status === "completed" || node.status === "failed" || node.status === "merged"
-                  ? formatDuration(node.updated_at - node.created_at)
-                  : node.status === "running"
-                    ? formatDuration(Math.max(0, now - node.created_at))
-                    : node.status}
+                {(() => {
+                  const elapsed = getNodeElapsedSeconds(node, now);
+                  return elapsed == null ? node.status : formatDuration(elapsed);
+                })()}
               </span>
             </button>
           );

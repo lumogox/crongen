@@ -519,6 +519,7 @@ function ContentAreaInner({
               node={selectedNode}
               project={selectedProject}
               allNodes={treeNodes}
+              flowMode={flowMode}
               onClose={onCloseTerminal}
               onFork={onForkNode}
               onMerge={onMergeNode}
