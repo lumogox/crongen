@@ -62,6 +62,26 @@ export interface AgentProviderReadiness {
   coming_soon: boolean;
 }
 
+export interface CodexReasoningLevel {
+  effort: string;
+  description?: string | null;
+}
+
+export interface CodexModelOption {
+  slug: string;
+  display_name: string;
+  description?: string | null;
+  default_reasoning_level?: string | null;
+  supported_reasoning_levels: CodexReasoningLevel[];
+}
+
+export interface CodexModelCatalog {
+  source: string;
+  fetched_at?: string | null;
+  client_version?: string | null;
+  models: CodexModelOption[];
+}
+
 // ─── Decision Node ─────────────────────────────────────────────
 
 export type NodeStatus =

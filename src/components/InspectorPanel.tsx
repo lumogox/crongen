@@ -6,6 +6,8 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  CornerDownLeft,
+  Square,
   Trash2,
   ScrollText,
   Trophy,
@@ -13,6 +15,7 @@ import {
 } from "lucide-react";
 import type { DecisionNode, Project } from "../types";
 import type { VisualNodeType } from "../types/node-types";
+import { usesPtySessionControls } from "../lib/agent-runtime";
 import { getNodeTypeMeta, inferNodeType } from "../lib/node-type-inference";
 import { formatRelativeTime } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -34,6 +37,8 @@ interface InspectorPanelProps {
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
   onValidateRuntime?: (nodeId: string) => void;
+  onSendEnter?: (nodeId: string) => void;
+  onStop?: (nodeId: string) => void;
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
 }
@@ -70,6 +75,8 @@ export function InspectorPanel({
   onRunNode,
   onUpdateNode,
   onValidateRuntime,
+  onSendEnter,
+  onStop,
   onRetryNode,
   onResetNode,
 }: InspectorPanelProps) {
@@ -213,6 +220,26 @@ export function InspectorPanel({
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Validate session state
                 </Button>
+                {usesPtySessionControls(project.agent_type) && node.status === "running" && onSendEnter && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onSendEnter(node.id)}
+                    className="mt-3 rounded-2xl border-emerald-300/20 bg-black/20 text-emerald-50 hover:bg-black/30"
+                  >
+                    <CornerDownLeft className="mr-2 h-4 w-4" />
+                    Send Enter
+                  </Button>
+                )}
+                {onStop && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onStop(node.id)}
+                    className="mt-3 rounded-2xl border-rose-300/20 bg-black/20 text-rose-50 hover:bg-black/30"
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Stop session
+                  </Button>
+                )}
               </div>
             )}
 
@@ -411,6 +438,26 @@ export function InspectorPanel({
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Validate session state
+                </Button>
+              )}
+              {usesPtySessionControls(project.agent_type) && node.status === "running" && onSendEnter && (
+                <Button
+                  variant="outline"
+                  onClick={() => onSendEnter(node.id)}
+                  className="justify-start rounded-2xl border-emerald-400/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+                >
+                  <CornerDownLeft className="mr-2 h-4 w-4" />
+                  Send Enter
+                </Button>
+              )}
+              {(node.status === "running" || node.status === "paused") && onStop && (
+                <Button
+                  variant="outline"
+                  onClick={() => onStop(node.id)}
+                  className="justify-start rounded-2xl border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
+                >
+                  <Square className="mr-2 h-4 w-4" />
+                  Stop session
                 </Button>
               )}
               {(node.status === "failed" || node.status === "completed") && onRetryNode && (

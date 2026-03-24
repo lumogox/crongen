@@ -4,6 +4,7 @@ use std::{
 };
 
 use rusqlite::Connection;
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter, State};
 use tokio::process::Command;
 
@@ -13,8 +14,8 @@ use crate::db;
 use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
-    DecisionNode, ExecutionMode, NodeRuntimeValidation, NodeStatus, OrchestratorMode,
-    OrchestratorStatus, Project,
+    CodexModelCatalog, CodexModelOption, CodexReasoningLevel, DecisionNode, ExecutionMode,
+    NodeRuntimeValidation, NodeStatus, OrchestratorMode, OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -34,6 +35,32 @@ struct ResolutionInvocation {
     program: String,
     args: Vec<String>,
     output_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCodexModelCatalog {
+    fetched_at: Option<String>,
+    client_version: Option<String>,
+    #[serde(default)]
+    models: Vec<RawCodexModelOption>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCodexModelOption {
+    slug: String,
+    display_name: Option<String>,
+    description: Option<String>,
+    default_reasoning_level: Option<String>,
+    #[serde(default)]
+    supported_reasoning_levels: Vec<RawCodexReasoningLevel>,
+    visibility: Option<String>,
+    priority: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCodexReasoningLevel {
+    effort: String,
+    description: Option<String>,
 }
 
 fn agent_label(agent_type: &AgentType) -> &'static str {
@@ -97,6 +124,62 @@ fn classify_codex_login_status(stdout: &str, stderr: &str, success: bool) -> Age
     } else {
         AgentProviderStatus::Error
     }
+}
+
+fn codex_models_cache_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Cannot resolve home directory".to_string())?;
+    Ok(home.join(".codex").join("models_cache.json"))
+}
+
+fn parse_codex_model_catalog(raw: &str) -> Result<CodexModelCatalog, String> {
+    let mut parsed: RawCodexModelCatalog = serde_json::from_str(raw)
+        .map_err(|err| format!("Failed to parse Codex model cache: {err}"))?;
+
+    parsed.models.sort_by(|left, right| {
+        left.priority
+            .unwrap_or(i32::MAX)
+            .cmp(&right.priority.unwrap_or(i32::MAX))
+            .then_with(|| {
+                left.display_name
+                    .as_deref()
+                    .unwrap_or(left.slug.as_str())
+                    .cmp(right.display_name.as_deref().unwrap_or(right.slug.as_str()))
+            })
+    });
+
+    let models = parsed
+        .models
+        .into_iter()
+        .filter(|model| model.visibility.as_deref().unwrap_or("list") == "list")
+        .map(|model| CodexModelOption {
+            slug: model.slug.clone(),
+            display_name: model.display_name.unwrap_or(model.slug),
+            description: model.description,
+            default_reasoning_level: model.default_reasoning_level,
+            supported_reasoning_levels: model
+                .supported_reasoning_levels
+                .into_iter()
+                .map(|level| CodexReasoningLevel {
+                    effort: level.effort,
+                    description: level.description,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(CodexModelCatalog {
+        source: "codex_models_cache".to_string(),
+        fetched_at: parsed.fetched_at,
+        client_version: parsed.client_version,
+        models,
+    })
+}
+
+fn load_codex_model_catalog() -> Result<CodexModelCatalog, String> {
+    let path = codex_models_cache_path()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|err| format!("Failed to read {}: {err}", path.display()))?;
+    parse_codex_model_catalog(&raw)
 }
 
 async fn get_provider_readiness(agent_type: &AgentType) -> AgentProviderReadiness {
@@ -705,6 +788,7 @@ pub async fn run_project_now(
                     &sdk.program,
                     &sdk.args,
                     &wt_info.path,
+                    sdk.stdin_injection.as_deref(),
                     db2,
                     app,
                 )
@@ -1354,6 +1438,7 @@ pub async fn run_node(
                     &sdk.program,
                     &sdk.args,
                     &wt_info.path,
+                    sdk.stdin_injection.as_deref(),
                     db2,
                     app,
                 )
@@ -1438,6 +1523,13 @@ pub async fn get_agent_provider_statuses() -> Result<Vec<AgentProviderReadiness>
     statuses.push(get_provider_readiness(&AgentType::Codex).await);
     statuses.push(get_provider_readiness(&AgentType::Gemini).await);
     Ok(statuses)
+}
+
+#[tauri::command]
+pub async fn get_codex_model_catalog() -> Result<CodexModelCatalog, String> {
+    tokio::task::spawn_blocking(load_codex_model_catalog)
+        .await
+        .map_err(|err| format!("Task error: {err}"))?
 }
 
 // ─── PTY Commands ─────────────────────────────────────────────
@@ -1534,6 +1626,16 @@ pub async fn resume_session(
         "session_resumed",
         serde_json::json!({ "node_id": session_id }),
     );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let stop_result = state
+        .pty
+        .stop_session(&session_id)
+        .or_else(|_| state.sdk.stop_session(&session_id));
+    stop_result.map_err(|e| format!("Stop error: {e}"))?;
     Ok(())
 }
 
@@ -1778,10 +1880,13 @@ pub async fn validate_node_runtime(
                 session_backend.as_deref().unwrap_or("agent")
             )
         } else {
-            format!(
-                "The {} session is still active and streaming output.",
-                session_backend.as_deref().unwrap_or("agent")
-            )
+            match session_backend.as_deref() {
+                Some("pty") => "The PTY session is still active and streaming output. If the agent is idle at a prompt, open the Session tab and use Send Enter.".to_string(),
+                _ => format!(
+                    "The {} session is still active and streaming output.",
+                    session_backend.as_deref().unwrap_or("agent")
+                ),
+            }
         }
     } else if matches!(node.status, NodeStatus::Running | NodeStatus::Paused) {
         let db_update = state.db.clone();
@@ -2055,7 +2160,7 @@ pub async fn get_node_context(
 mod tests {
     use super::{
         build_merge_resolution_invocation, classify_codex_login_status,
-        parse_claude_auth_logged_in, role_requires_provider_validation,
+        parse_claude_auth_logged_in, parse_codex_model_catalog, role_requires_provider_validation,
     };
     use crate::models::{AgentProviderStatus, AgentType};
 
@@ -2103,5 +2208,53 @@ mod tests {
             .iter()
             .any(|arg| arg == "--output-last-message"));
         assert!(invocation.output_file.is_some());
+    }
+
+    #[test]
+    fn parses_codex_model_catalog_and_filters_hidden_entries() {
+        let raw = r#"
+        {
+          "fetched_at": "2026-03-23T18:39:04.683298Z",
+          "client_version": "0.116.0",
+          "models": [
+            {
+              "slug": "gpt-5.4-mini",
+              "display_name": "GPT-5.4 Mini",
+              "description": "Fast model",
+              "default_reasoning_level": "medium",
+              "supported_reasoning_levels": [{ "effort": "medium", "description": "Balanced" }],
+              "visibility": "list",
+              "priority": 2
+            },
+            {
+              "slug": "gpt-5.4",
+              "display_name": "GPT-5.4",
+              "description": "Frontier model",
+              "default_reasoning_level": "high",
+              "supported_reasoning_levels": [{ "effort": "high", "description": "Deep" }],
+              "visibility": "list",
+              "priority": 0
+            },
+            {
+              "slug": "hidden-model",
+              "display_name": "Hidden",
+              "visibility": "hidden",
+              "priority": 1
+            }
+          ]
+        }
+        "#;
+
+        let catalog = parse_codex_model_catalog(raw).expect("catalog should parse");
+
+        assert_eq!(catalog.source, "codex_models_cache");
+        assert_eq!(catalog.client_version.as_deref(), Some("0.116.0"));
+        assert_eq!(catalog.models.len(), 2);
+        assert_eq!(catalog.models[0].slug, "gpt-5.4");
+        assert_eq!(catalog.models[1].slug, "gpt-5.4-mini");
+        assert_eq!(
+            catalog.models[0].supported_reasoning_levels[0].effort,
+            "high"
+        );
     }
 }

@@ -19,6 +19,10 @@ export interface AgentTypeTemplate {
   buildCommandPreview: (prompt: string, config: AgentTypeConfig) => string;
 }
 
+function codexApprovalPreviewFlag(mode?: string | null): string | null {
+  return !mode || mode === "full-auto" ? "--full-auto" : null;
+}
+
 export const CLAUDE_CODE_TEMPLATE: AgentTypeTemplate = {
   type: "claude_code",
   label: "Claude Code",
@@ -78,14 +82,14 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
   } satisfies CodexConfig,
   buildCommandPreview: (prompt, config) => {
     const cfg = config as CodexConfig;
-    const parts = ["codex"];
-    const approval = cfg.approval_mode || "full-auto";
-    parts.push(`--${approval}`);
+    const parts = ["codex", "exec", "--json"];
+    const approvalFlag = codexApprovalPreviewFlag(cfg.approval_mode);
+    if (approvalFlag) parts.push(approvalFlag);
     if (cfg.model) parts.push("--model", cfg.model);
     if (cfg.sandbox) parts.push("--sandbox", cfg.sandbox);
-    if (cfg.skip_git_check) parts.push("--skip-git-check");
-    if (cfg.json_output) parts.push("--json");
-    return `echo ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
+    if (cfg.skip_git_check) parts.push("--skip-git-repo-check");
+    parts.push("-");
+    return `printf %s ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
   },
 };
 

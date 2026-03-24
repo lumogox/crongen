@@ -50,6 +50,8 @@ interface ContentAreaProps {
   agentSetupReminder?: string | null;
   onOpenSettings?: () => void;
   onValidateRuntime?: (nodeId: string) => void;
+  onSendEnterToNode?: (nodeId: string) => void;
+  onStopNode?: (nodeId: string) => void;
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
 }
@@ -159,6 +161,8 @@ function ContentAreaInner({
   agentSetupReminder,
   onOpenSettings,
   onValidateRuntime,
+  onSendEnterToNode,
+  onStopNode,
   onRetryNode,
   onResetNode,
 }: ContentAreaProps) {
@@ -506,7 +510,9 @@ function ContentAreaInner({
               orchestratorStatus={orchestratorStatus}
               onSelectNode={(id) => onSelectNode(id)}
               onValidateRuntime={onValidateRuntime}
+              onSendEnter={onSendEnterToNode}
               onResumeNode={onResumeNode}
+              onStopNode={onStopNode}
             />
           ) : selectedNode && selectedProject ? (
             <InspectorPanel
@@ -523,6 +529,8 @@ function ContentAreaInner({
               onRunNode={onRunNode}
               onUpdateNode={onUpdateNode}
               onValidateRuntime={onValidateRuntime}
+              onSendEnter={onSendEnterToNode}
+              onStop={onStopNode}
               onRetryNode={onRetryNode}
               onResetNode={onResetNode}
             />

@@ -5,8 +5,8 @@ use crate::models::{
 
 /// Builds the execution mode for a given agent type and prompt.
 ///
-/// Claude Code uses SDK mode (`claude -p` with structured JSON output).
-/// All other agents use PTY mode with interactive TUI/shell.
+/// Claude Code and Codex use structured SDK mode.
+/// Gemini and custom agents stay on the PTY path.
 ///
 /// When `context` is provided (TOON-formatted execution context), it is
 /// prepended to the prompt/injection so the agent knows its place in the tree.
@@ -44,7 +44,7 @@ pub fn build_shell_command(
             build_claude_code_command(&effective_prompt, cfg, default_model)
         }
         (AgentType::Codex, AgentTypeConfig::Codex(cfg)) => {
-            ExecutionMode::Pty(build_codex_command(&effective_prompt, cfg, default_model))
+            build_codex_exec_command(&effective_prompt, cfg, default_model)
         }
         (AgentType::Gemini, AgentTypeConfig::Gemini(cfg)) => {
             ExecutionMode::Pty(build_gemini_command(&effective_prompt, cfg, default_model))
@@ -118,19 +118,23 @@ fn build_claude_code_command(
     ExecutionMode::Sdk(SdkExecution {
         program: "claude".to_string(),
         args,
+        stdin_injection: None,
     })
 }
 
-fn build_codex_command(
+fn build_codex_exec_command(
     prompt: &str,
     cfg: &CodexConfig,
     default_model: Option<&str>,
-) -> ShellExecution {
+) -> ExecutionMode {
     let mut args = Vec::new();
 
-    // Interactive mode: auto-approve flag so the agent doesn't block on confirmations
-    let approval = cfg.approval_mode.as_deref().unwrap_or("full-auto");
-    args.push(format!("--{approval}"));
+    args.push("exec".to_string());
+    args.push("--json".to_string());
+
+    if let Some(flag) = codex_approval_flag(cfg.approval_mode.as_deref()) {
+        args.push(flag.to_string());
+    }
 
     // Optional flags
     if let Some(model) = cfg.model.as_deref().or(default_model) {
@@ -144,18 +148,31 @@ fn build_codex_command(
     }
 
     if cfg.skip_git_check {
-        args.push("--skip-git-check".to_string());
+        args.push("--skip-git-repo-check".to_string());
     }
 
     if cfg.json_output {
-        args.push("--json".to_string());
+        // Already enforced above; keep config field harmlessly compatible.
     }
 
-    ShellExecution {
+    // Read the full prompt from stdin to avoid shell/TTY timing issues and to
+    // keep large execution-context payloads off the argv boundary.
+    args.push("-".to_string());
+
+    ExecutionMode::Sdk(SdkExecution {
         program: "codex".to_string(),
         args,
         stdin_injection: Some(prompt.to_string()),
-        auto_responses: vec![],
+    })
+}
+
+fn codex_approval_flag(mode: Option<&str>) -> Option<&'static str> {
+    match mode.unwrap_or("full-auto") {
+        "full-auto" => Some("--full-auto"),
+        // Legacy values don't map 1:1 to the current Codex exec CLI.
+        // Falling back to the CLI default keeps runtime and previews aligned.
+        "suggest" | "auto-edit" | "default" | "" => None,
+        _ => None,
     }
 }
 
@@ -227,5 +244,69 @@ pub fn default_shell_for_type(agent_type: &AgentType) -> &'static str {
         AgentType::Codex => "codex",
         AgentType::Gemini => "gemini",
         AgentType::Custom => "bash",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{AgentTypeConfig, CodexConfig};
+
+    #[test]
+    fn codex_exec_uses_stdin_json_and_repo_skip_flag() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Implement the feature",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: Some("gpt-5.4".to_string()),
+                sandbox: Some("workspace-write".to_string()),
+                approval_mode: Some("full-auto".to_string()),
+                skip_git_check: true,
+                json_output: false,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+
+        assert_eq!(sdk.program, "codex");
+        assert!(sdk.args.iter().any(|arg| arg == "exec"));
+        assert!(sdk.args.iter().any(|arg| arg == "--json"));
+        assert!(sdk.args.iter().any(|arg| arg == "--skip-git-repo-check"));
+        assert_eq!(sdk.args.last().map(String::as_str), Some("-"));
+        assert_eq!(
+            sdk.stdin_injection.as_deref(),
+            Some("Implement the feature")
+        );
+    }
+
+    #[test]
+    fn codex_exec_omits_full_auto_for_legacy_approval_modes() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Review the branch",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: None,
+                sandbox: None,
+                approval_mode: Some("suggest".to_string()),
+                skip_git_check: false,
+                json_output: false,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+
+        assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
     }
 }

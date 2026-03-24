@@ -1,4 +1,5 @@
 import type { DecisionNode, AgentType } from "../../types";
+import { usesStructuredSession } from "../../lib/agent-runtime";
 import { TerminalView } from "../TerminalView";
 import { SdkSessionView } from "../SdkSessionView";
 
@@ -13,7 +14,7 @@ export function SessionTab({ node, agentType, isActive }: SessionTabProps) {
   // to preserve xterm scroll position and state
   return (
     <div className="h-full" style={{ display: isActive ? "block" : "none" }}>
-      {agentType === "claude_code" ? (
+      {usesStructuredSession(agentType) ? (
         <SdkSessionView sessionId={node.id} status={node.status} />
       ) : (
         <TerminalView sessionId={node.id} status={node.status} />

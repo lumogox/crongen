@@ -143,7 +143,7 @@ impl PtyManager {
         // Stdin injection: wait for TUI/shell to initialize, write the prompt
         // text, pause for the input handler to process it, then send Enter (\r)
         // as a separate write. Splitting text from submit is critical for TUI
-        // agents (Claude Code, Codex, Gemini) — their Ink/React input handlers
+        // terminal-backed agents (Gemini, custom shells) — their Ink/React input handlers
         // may treat a single write containing text+\r as a paste event rather
         // than recognizing \r as a distinct Enter keypress.
         if let Some(injection) = stdin_injection {
@@ -249,8 +249,10 @@ impl PtyManager {
                         // Each pattern fires at most once per session.
                         if !auto_responses.is_empty() {
                             let chunk_str = String::from_utf8_lossy(chunk);
+                            let chunk_lower = chunk_str.to_lowercase();
                             for (i, ar) in auto_responses.iter().enumerate() {
-                                if !matched_patterns.contains(&i) && chunk_str.contains(&ar.pattern)
+                                let pattern = ar.pattern.to_lowercase();
+                                if !matched_patterns.contains(&i) && chunk_lower.contains(&pattern)
                                 {
                                     matched_patterns.insert(i);
                                     log::info!(
@@ -510,6 +512,56 @@ impl PtyManager {
             pid,
             resumed_threads
         );
+        Ok(())
+    }
+
+    /// Stop a PTY session by terminating its process tree.
+    #[cfg(unix)]
+    pub fn stop_session(&self, session_id: &str) -> Result<()> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
+        let pid = session
+            .process_id
+            .ok_or_else(|| anyhow::anyhow!("No process ID for session: {session_id}"))?;
+
+        let ret = unsafe { libc::kill(-(pid as i32), libc::SIGTERM) };
+        if ret != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to stop process {pid}: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        log::info!("Stopped session {} (pid {})", session_id, pid);
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    pub fn stop_session(&self, session_id: &str) -> Result<()> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
+        let pid = session
+            .process_id
+            .ok_or_else(|| anyhow::anyhow!("No process ID for session: {session_id}"))?;
+        drop(sessions);
+
+        let output = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output()?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to stop session {}: {}",
+                session_id,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!("Stopped session {} (pid {})", session_id, pid);
         Ok(())
     }
 

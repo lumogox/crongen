@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentProviderReadiness, AgentRole, AgentType, AppSettings } from "../types";
+import type {
+  AgentProviderReadiness,
+  AgentRole,
+  AgentType,
+  AppSettings,
+  CodexModelCatalog,
+  CodexModelOption,
+} from "../types";
 import { BUILT_IN_AGENT_TYPES, getAgentLabel } from "../lib/agent-templates";
+import { getCodexModelCatalog } from "../lib/tauri-commands";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +18,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Bot,
   Brain,
@@ -56,8 +72,8 @@ const PROVIDER_THEMES: Record<AgentType, ProviderTheme> = {
     tint: "text-cyan-200",
     surface: "from-cyan-500/18 via-sky-500/6 to-transparent",
     ring: "border-cyan-400/30",
-    description: "OpenAI's coding agent with terminal-native workflows and strong repo awareness.",
-    chips: ["Planning", "Execution", "Terminal"],
+    description: "OpenAI's coding agent with SDK-backed streaming runs, strong repo awareness, and a synced local model catalog.",
+    chips: ["Planning", "Execution", "SDK"],
   },
   gemini: {
     icon: Orbit,
@@ -125,6 +141,9 @@ function RoleSocket({
   modelValue,
   onModelChange,
   status,
+  codexCatalog,
+  codexCatalogError,
+  isCodexCatalogLoading,
 }: {
   role: AgentRole;
   focus: boolean;
@@ -132,9 +151,36 @@ function RoleSocket({
   modelValue: string;
   onModelChange: (value: string) => void;
   status: AgentProviderReadiness | null;
+  codexCatalog: CodexModelCatalog | null;
+  codexCatalogError: string | null;
+  isCodexCatalogLoading: boolean;
 }) {
   const roleLabel = role === "planning" ? "Planning" : "Execution";
   const roleDescription = role === "planning" ? "Task decomposition" : "Agent node runs";
+  const codexModel =
+    selectedAgent === "codex"
+      ? codexCatalog?.models.find((model) => model.slug === modelValue) ?? null
+      : null;
+  const hasCodexCatalog = selectedAgent === "codex" && (codexCatalog?.models.length ?? 0) > 0;
+  const [useManualCodexModel, setUseManualCodexModel] = useState(
+    Boolean(selectedAgent === "codex" && modelValue && !codexModel),
+  );
+
+  useEffect(() => {
+    if (selectedAgent !== "codex") {
+      setUseManualCodexModel(false);
+      return;
+    }
+
+    if (modelValue && !codexModel) {
+      setUseManualCodexModel(true);
+      return;
+    }
+
+    if (modelValue && codexModel) {
+      setUseManualCodexModel(false);
+    }
+  }, [codexModel, modelValue, selectedAgent]);
 
   return (
     <div
@@ -161,16 +207,123 @@ function RoleSocket({
         <label className="block text-[11px] uppercase tracking-[0.18em] text-slate-500">
           Model override
         </label>
-        <Input
-          value={modelValue}
-          onChange={(event) => onModelChange(event.target.value)}
-          placeholder={selectedAgent ? `${getAgentLabel(selectedAgent)} default` : "Select a provider below"}
-          className="border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600"
-        />
+        {selectedAgent === "codex" ? (
+          <div className="space-y-2">
+            {isCodexCatalogLoading ? (
+              <div className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin text-cyan-200" />
+                Syncing discovered Codex models
+              </div>
+            ) : hasCodexCatalog && !useManualCodexModel ? (
+              <Select
+                value={codexModel?.slug ?? "__default__"}
+                onValueChange={(value) => onModelChange(value === "__default__" ? "" : value)}
+              >
+                <SelectTrigger className="w-full rounded-xl border-white/10 bg-black/30 text-left text-slate-100 hover:bg-white/5">
+                  <SelectValue placeholder="Use Codex default model" />
+                </SelectTrigger>
+                <SelectContent className="border-white/10 bg-[#090d1a] text-slate-100">
+                  <SelectItem value="__default__">Use Codex default</SelectItem>
+                  <SelectSeparator className="bg-white/10" />
+                  {codexCatalog?.models.map((model) => (
+                    <SelectItem
+                      key={model.slug}
+                      value={model.slug}
+                      className="items-start py-2"
+                    >
+                      <span className="flex flex-col items-start gap-0.5">
+                        <span className="font-medium text-slate-100">{model.display_name}</span>
+                        <span className="text-xs text-slate-500">
+                          {model.description ?? model.slug}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={modelValue}
+                onChange={(event) => onModelChange(event.target.value)}
+                placeholder="Enter a Codex model slug"
+                className="border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600"
+              />
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[11px] text-slate-500">
+                {codexCatalog
+                  ? `Synced from local Codex cache${codexCatalog.client_version ? ` v${codexCatalog.client_version}` : ""}.`
+                  : codexCatalogError
+                    ? "Codex cache unavailable. Manual slug entry still works."
+                    : "Use Codex's local catalog when available, or enter a manual slug."}
+              </div>
+              {hasCodexCatalog ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (useManualCodexModel) {
+                      setUseManualCodexModel(false);
+                      if (!codexModel) {
+                        onModelChange("");
+                      }
+                      return;
+                    }
+                    setUseManualCodexModel(true);
+                  }}
+                  className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300 transition-colors hover:bg-white/10"
+                >
+                  {useManualCodexModel ? "Back to catalog" : "Use custom slug"}
+                </button>
+              ) : null}
+            </div>
+
+            {codexModel ? (
+              <CodexModelHint model={codexModel} />
+            ) : modelValue ? (
+              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                Using a manual Codex model slug that is not present in the local cache.
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <Input
+            value={modelValue}
+            onChange={(event) => onModelChange(event.target.value)}
+            placeholder={selectedAgent ? `${getAgentLabel(selectedAgent)} default` : "Select a provider below"}
+            className="border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600"
+          />
+        )}
       </div>
 
       <div className="mt-3 text-xs text-slate-500">
         {status?.detail ?? "Select a provider below to wire this role."}
+      </div>
+    </div>
+  );
+}
+
+function CodexModelHint({ model }: { model: CodexModelOption }) {
+  return (
+    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2">
+      <div className="text-sm font-medium text-cyan-50">{model.display_name}</div>
+      <div className="mt-1 text-xs text-cyan-100/80">
+        {model.description ?? "Discovered from your local Codex installation."}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {model.default_reasoning_level ? (
+          <span className="rounded-full border border-cyan-300/20 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-cyan-100">
+            Default reasoning: {model.default_reasoning_level}
+          </span>
+        ) : null}
+        {model.supported_reasoning_levels.slice(0, 3).map((level) => (
+          <span
+            key={`${model.slug}-${level.effort}`}
+            className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-300"
+          >
+            {level.effort}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -189,10 +342,17 @@ export function SettingsModal({
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [codexCatalog, setCodexCatalog] = useState<CodexModelCatalog | null>(null);
+  const [codexCatalogError, setCodexCatalogError] = useState<string | null>(null);
+  const [isCodexCatalogLoading, setIsCodexCatalogLoading] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
   }, [settings]);
+
+  useEffect(() => {
+    void refreshCodexCatalog();
+  }, []);
 
   const statusByType = useMemo(
     () => new Map(statuses.map((status) => [status.agent_type, status])),
@@ -203,6 +363,20 @@ export function SettingsModal({
   const executionStatus = draft.execution_agent ? statusByType.get(draft.execution_agent) ?? null : null;
   const hasRequiredDefaults = Boolean(draft.planning_agent && draft.execution_agent);
   const saveDisabled = isSaving || (onboarding && !hasRequiredDefaults);
+
+  async function refreshCodexCatalog() {
+    setIsCodexCatalogLoading(true);
+    try {
+      const catalog = await getCodexModelCatalog();
+      setCodexCatalog(catalog);
+      setCodexCatalogError(null);
+    } catch (error) {
+      setCodexCatalog(null);
+      setCodexCatalogError(String(error));
+    } finally {
+      setIsCodexCatalogLoading(false);
+    }
+  }
 
   async function handleSave() {
     setIsSaving(true);
@@ -235,7 +409,7 @@ export function SettingsModal({
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
-      await onRefreshStatuses();
+      await Promise.all([onRefreshStatuses(), refreshCodexCatalog()]);
     } finally {
       setIsRefreshing(false);
     }
@@ -290,6 +464,9 @@ export function SettingsModal({
                   modelValue={draft.planning_model ?? ""}
                   onModelChange={(value) => setDraft((current) => ({ ...current, planning_model: value }))}
                   status={planningStatus}
+                  codexCatalog={codexCatalog}
+                  codexCatalogError={codexCatalogError}
+                  isCodexCatalogLoading={isCodexCatalogLoading}
                 />
                 <RoleSocket
                   role="execution"
@@ -298,6 +475,9 @@ export function SettingsModal({
                   modelValue={draft.execution_model ?? ""}
                   onModelChange={(value) => setDraft((current) => ({ ...current, execution_model: value }))}
                   status={executionStatus}
+                  codexCatalog={codexCatalog}
+                  codexCatalogError={codexCatalogError}
+                  isCodexCatalogLoading={isCodexCatalogLoading}
                 />
               </div>
             </DialogHeader>

@@ -75,6 +75,29 @@ impl AgentProviderReadiness {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexReasoningLevel {
+    pub effort: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexModelOption {
+    pub slug: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub default_reasoning_level: Option<String>,
+    pub supported_reasoning_levels: Vec<CodexReasoningLevel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexModelCatalog {
+    pub source: String,
+    pub fetched_at: Option<String>,
+    pub client_version: Option<String>,
+    pub models: Vec<CodexModelOption>,
+}
+
 // ─── Agent Type Configs ────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +125,7 @@ pub struct ClaudeCodeConfig {
 pub struct CodexConfig {
     pub model: Option<String>,
     pub sandbox: Option<String>,       // "full", "network-only", "none"
-    pub approval_mode: Option<String>, // "full-auto", "suggest", "auto-edit"
+    pub approval_mode: Option<String>, // currently only "full-auto" maps to a dedicated CLI flag
     pub skip_git_check: bool,
     pub json_output: bool,
 }
@@ -227,14 +250,15 @@ pub struct ShellExecution {
 pub struct SdkExecution {
     pub program: String,
     pub args: Vec<String>,
+    pub stdin_injection: Option<String>,
 }
 
 /// Determines how an agent process is spawned and managed.
 #[derive(Debug, Clone)]
 pub enum ExecutionMode {
-    /// Full PTY with xterm.js rendering (Codex, Gemini, Custom).
+    /// Full PTY with xterm.js rendering (Gemini, Custom).
     Pty(ShellExecution),
-    /// Headless subprocess with structured JSON output (Claude Code).
+    /// Headless subprocess with structured JSON output (Claude Code, Codex exec).
     Sdk(SdkExecution),
 }
 
@@ -242,7 +266,7 @@ pub enum ExecutionMode {
 #[derive(Clone, serde::Serialize)]
 pub struct SdkOutputPayload {
     pub session_id: String,
-    pub data: String, // raw JSON line
+    pub data: String, // structured JSON line
 }
 
 // ─── Orchestrator Types ─────────────────────────────────────────

@@ -737,6 +737,7 @@ async fn run_single_node(
                 &sdk_exec.program,
                 &sdk_exec.args,
                 &wt_info.path,
+                sdk_exec.stdin_injection.as_deref(),
                 db2,
                 app.clone(),
             )

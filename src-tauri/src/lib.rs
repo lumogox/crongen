@@ -82,12 +82,14 @@ pub fn run() {
             commands::check_executable,
             commands::check_env_var,
             commands::get_agent_provider_statuses,
+            commands::get_codex_model_catalog,
             // PTY
             commands::write_pty,
             commands::resize_pty,
             commands::get_session_output,
             commands::pause_session,
             commands::resume_session,
+            commands::stop_session,
             // SDK
             commands::get_sdk_session_output,
             // Orchestrator

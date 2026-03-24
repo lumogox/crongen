@@ -3,6 +3,7 @@ import type {
   AgentProviderReadiness,
   AgentTypeConfig,
   AppSettings,
+  CodexModelCatalog,
   DecisionNode,
   MergeResult,
   NodeRuntimeValidation,
@@ -176,6 +177,10 @@ export async function resumeSession(sessionId: string): Promise<void> {
   return invoke("resume_session", { sessionId });
 }
 
+export async function stopSession(sessionId: string): Promise<void> {
+  return invoke("stop_session", { sessionId });
+}
+
 // ─── SDK Commands ─────────────────────────────────────────────
 
 export async function getSdkSessionOutput(
@@ -196,6 +201,10 @@ export async function checkEnvVar(name: string): Promise<boolean> {
 
 export async function getAgentProviderStatuses(): Promise<AgentProviderReadiness[]> {
   return invoke("get_agent_provider_statuses");
+}
+
+export async function getCodexModelCatalog(): Promise<CodexModelCatalog> {
+  return invoke("get_codex_model_catalog");
 }
 
 // ─── Orchestrator ─────────────────────────────────────────────

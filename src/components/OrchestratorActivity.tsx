@@ -8,8 +8,11 @@ import {
   Clock,
   Play,
   RefreshCw,
+  CornerDownLeft,
+  Square,
 } from "lucide-react";
 import type { AgentType, DecisionNode, OrchestratorStatus } from "../types";
+import { usesPtySessionControls, usesStructuredSession } from "../lib/agent-runtime";
 import { SdkSessionView } from "./SdkSessionView";
 import { TerminalView } from "./TerminalView";
 import { Button } from "./ui/button";
@@ -39,7 +42,9 @@ interface OrchestratorActivityProps {
   orchestratorStatus: OrchestratorStatus;
   onSelectNode: (id: string) => void;
   onValidateRuntime?: (nodeId: string) => void;
+  onSendEnter?: (nodeId: string) => void;
   onResumeNode?: (nodeId: string) => void;
+  onStopNode?: (nodeId: string) => void;
 }
 
 const statusIcon: Record<string, React.ReactNode> = {
@@ -66,7 +71,9 @@ export function OrchestratorActivity({
   orchestratorStatus,
   onSelectNode,
   onValidateRuntime,
+  onSendEnter,
   onResumeNode,
+  onStopNode,
 }: OrchestratorActivityProps) {
   // Auto-follow the currently running node
   const [viewingNodeId, setViewingNodeId] = useState<string | null>(
@@ -97,7 +104,9 @@ export function OrchestratorActivity({
     : 0;
 
   const canValidate = viewingNode?.status === "running" || viewingNode?.status === "paused";
+  const canSendEnter = usesPtySessionControls(agentType) && viewingNode?.status === "running";
   const canContinue = viewingNode?.status === "paused";
+  const canStop = viewingNode?.status === "running" || viewingNode?.status === "paused";
 
   return (
     <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] shadow-xl overflow-hidden">
@@ -206,6 +215,16 @@ export function OrchestratorActivity({
                     Validate state
                   </Button>
                 )}
+                {canSendEnter && onSendEnter && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onSendEnter(viewingNode.id)}
+                    className="rounded-2xl border-emerald-400/20 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+                  >
+                    <CornerDownLeft className="mr-2 h-4 w-4" />
+                    Send Enter
+                  </Button>
+                )}
                 {canContinue && onResumeNode && (
                   <Button
                     variant="outline"
@@ -216,16 +235,26 @@ export function OrchestratorActivity({
                     Continue session
                   </Button>
                 )}
+                {canStop && onStopNode && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onStopNode(viewingNode.id)}
+                    className="rounded-2xl border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
+                  >
+                    <Square className="mr-2 h-4 w-4" />
+                    Stop session
+                  </Button>
+                )}
               </div>
               {(viewingNode.status === "running" || viewingNode.status === "paused") && (
                 <div className="mt-2 text-[11px] leading-5 text-slate-400">
-                  If this looks stuck, validate the runtime state. CronGen will detect whether the
-                  agent is still alive and recover the node if the session disappeared.
+                  If this looks stuck, validate the runtime state. Terminal-backed agents can still
+                  accept a manual Enter, and Stop session always gives you a clean retry path.
                 </div>
               )}
             </div>
             <div className="flex-1 min-h-0 min-w-0">
-              {agentType === "claude_code" ? (
+              {usesStructuredSession(agentType) ? (
                 <SdkSessionView sessionId={viewingNode.id} status={viewingNode.status} />
               ) : (
                 <TerminalView sessionId={viewingNode.id} status={viewingNode.status} />

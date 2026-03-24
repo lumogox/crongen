@@ -65,6 +65,10 @@ export function DecisionCanvas({
   onResetNode,
 }: DecisionCanvasProps) {
   const { fitView } = useReactFlow();
+  const nodeSignature = useMemo(
+    () => treeNodes.map((node) => node.id).join("|"),
+    [treeNodes],
+  );
 
   const ancestryPath = useMemo(
     () => getAncestryPath(allNodes, selectedNodeId),
@@ -105,10 +109,10 @@ export function DecisionCanvas({
   // Fit view when tree changes or layout shifts (e.g. orchestrator panel appears/disappears)
   useEffect(() => {
     if (flowNodes.length > 0) {
-      const t = setTimeout(() => fitView({ padding: 0.2, duration: 200 }), 50);
+      const t = setTimeout(() => fitView({ padding: 0.22, duration: 220 }), 80);
       return () => clearTimeout(t);
     }
-  }, [flowNodes.length, fitView, orchestratorActive]);
+  }, [fitView, nodeSignature, orchestratorActive, flowNodes.length]);
 
   // Escape to deselect
   useEffect(() => {

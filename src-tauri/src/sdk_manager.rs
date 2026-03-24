@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::db;
@@ -75,6 +75,7 @@ impl SdkManager {
         program: &str,
         args: &[String],
         cwd: &str,
+        stdin_injection: Option<&str>,
         db: Arc<Mutex<rusqlite::Connection>>,
         app: AppHandle,
     ) -> anyhow::Result<()> {
@@ -84,7 +85,20 @@ impl SdkManager {
         cmd.stdout(std::process::Stdio::piped());
         cmd.stderr(std::process::Stdio::piped());
         // Don't create a PTY — we want clean pipe output
-        cmd.stdin(std::process::Stdio::null());
+        cmd.stdin(if stdin_injection.is_some() {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        });
+        #[cfg(unix)]
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
 
         let mut child = cmd
             .spawn()
@@ -94,6 +108,8 @@ impl SdkManager {
 
         let stdout = child.stdout.take().expect("stdout was piped");
         let stderr = child.stderr.take().expect("stderr was piped");
+        let stdin = child.stdin.take();
+        let stdin_payload = stdin_injection.map(str::to_owned);
 
         // Initialize output buffer
         {
@@ -148,40 +164,74 @@ impl SdkManager {
                 .open(&log_path)
                 .ok();
 
+            if let Some(payload) = stdin_payload {
+                if let Some(mut child_stdin) = stdin {
+                    if let Err(err) = child_stdin.write_all(payload.as_bytes()).await {
+                        log::warn!("SDK stdin write failed [{}]: {}", sid, err);
+                        append_sdk_line(
+                            &output_buffers,
+                            &sid,
+                            sdk_stderr_event_json(&format!(
+                                "Failed to send the initial prompt to the agent: {err}"
+                            )),
+                            log_file.as_mut(),
+                            &app_reader,
+                        );
+                    } else if let Err(err) = child_stdin.shutdown().await {
+                        log::warn!("SDK stdin shutdown failed [{}]: {}", sid, err);
+                        append_sdk_line(
+                            &output_buffers,
+                            &sid,
+                            sdk_stderr_event_json(&format!(
+                                "Failed to finalize the initial prompt stream: {err}"
+                            )),
+                            log_file.as_mut(),
+                            &app_reader,
+                        );
+                    }
+                } else {
+                    log::warn!("SDK stdin unavailable for session {}", sid);
+                    append_sdk_line(
+                        &output_buffers,
+                        &sid,
+                        sdk_stderr_event_json(
+                            "The agent session started without an available stdin pipe.",
+                        ),
+                        log_file.as_mut(),
+                        &app_reader,
+                    );
+                }
+            }
+
             // Read stdout line by line (each line is a JSON object)
             let mut stdout_reader = BufReader::new(stdout).lines();
 
             // Also drain stderr in background so it doesn't block
             let sid_stderr = sid.clone();
+            let output_buffers_stderr = output_buffers.clone();
+            let app_stderr = app_reader.clone();
+            let log_path_stderr = log_path.clone();
             tokio::spawn(async move {
+                let mut stderr_log_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path_stderr)
+                    .ok();
                 let mut stderr_reader = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = stderr_reader.next_line().await {
                     log::warn!("SDK stderr [{}]: {}", sid_stderr, line);
+                    append_sdk_line(
+                        &output_buffers_stderr,
+                        &sid_stderr,
+                        sdk_stderr_event_json(&line),
+                        stderr_log_file.as_mut(),
+                        &app_stderr,
+                    );
                 }
             });
 
             while let Ok(Some(line)) = stdout_reader.next_line().await {
-                // Store in memory buffer
-                if let Ok(mut buffers) = output_buffers.lock() {
-                    if let Some(buf) = buffers.get_mut(&sid) {
-                        buf.push(line.clone());
-                    }
-                }
-
-                // Append to log file
-                if let Some(ref mut f) = log_file {
-                    use std::io::Write;
-                    let _ = writeln!(f, "{}", line);
-                }
-
-                // Emit Tauri event
-                let _ = app_reader.emit(
-                    "sdk_output",
-                    SdkOutputPayload {
-                        session_id: sid.clone(),
-                        data: line,
-                    },
-                );
+                append_sdk_line(&output_buffers, &sid, line, log_file.as_mut(), &app_reader);
             }
 
             // Flush log file
@@ -344,6 +394,53 @@ impl SdkManager {
         Ok(())
     }
 
+    /// Stop an SDK session by terminating its process tree.
+    #[cfg(unix)]
+    pub fn stop_session(&self, session_id: &str) -> anyhow::Result<()> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("SDK session not found: {session_id}"))?;
+
+        let pid = session.process_id;
+        let ret = unsafe { libc::kill(-(pid as i32), libc::SIGTERM) };
+        if ret != 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to stop SDK process {pid}: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        log::info!("Stopped SDK session {} (pid {})", session_id, pid);
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    pub fn stop_session(&self, session_id: &str) -> anyhow::Result<()> {
+        let sessions = self.sessions.lock().unwrap();
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow::anyhow!("SDK session not found: {session_id}"))?;
+        let pid = session.process_id;
+        drop(sessions);
+
+        let output = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to launch taskkill: {e}"))?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!(
+                "Failed to stop SDK session {}: {}",
+                session_id,
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        log::info!("Stopped SDK session {} (pid {})", session_id, pid);
+        Ok(())
+    }
+
     /// Get buffered JSON lines for a session.
     /// Checks in-memory buffer first, then falls back to the `.jsonl` log file.
     pub fn get_buffered_output(&self, session_id: &str) -> Option<Vec<String>> {
@@ -387,4 +484,40 @@ impl SdkManager {
         let log_path = self.logs_dir.join(format!("{}.jsonl", session_id));
         let _ = std::fs::remove_file(log_path);
     }
+}
+
+fn append_sdk_line(
+    output_buffers: &Arc<Mutex<HashMap<String, Vec<String>>>>,
+    session_id: &str,
+    line: String,
+    log_file: Option<&mut std::fs::File>,
+    app: &AppHandle,
+) {
+    if let Ok(mut buffers) = output_buffers.lock() {
+        if let Some(buf) = buffers.get_mut(session_id) {
+            buf.push(line.clone());
+        }
+    }
+
+    if let Some(file) = log_file {
+        use std::io::Write;
+        let _ = writeln!(file, "{}", line);
+    }
+
+    let _ = app.emit(
+        "sdk_output",
+        SdkOutputPayload {
+            session_id: session_id.to_string(),
+            data: line,
+        },
+    );
+}
+
+fn sdk_stderr_event_json(text: &str) -> String {
+    serde_json::json!({
+        "type": "stderr",
+        "stream": "stderr",
+        "text": text,
+    })
+    .to_string()
 }

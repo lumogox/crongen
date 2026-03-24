@@ -25,8 +25,10 @@ import {
   createStructuralNode,
   mergeNodeBranch,
   deleteNodeBranch,
+  writePty,
   pauseSession,
   resumeSession,
+  stopSession,
   createRootNode,
   runNode,
   updateNode,
@@ -168,6 +170,7 @@ function App() {
       setOrchestratorStatus(null);
       return;
     }
+    let cancelled = false;
     setTreeLoading(true);
     setSelectedNodeId(selectedSessionId);
     setOrchestratorStatus(null);
@@ -179,14 +182,23 @@ function App() {
     }
     getDecisionTree(selectedProjectId)
       .then((nodes) => {
+        if (cancelled) return;
         setTreeNodes(filterSessionSubtree(nodes, selectedSessionId));
         // Restore orchestrator status if this session has an active run
         getOrchestratorStatus(selectedSessionId)
-          .then((status) => { if (status) setOrchestratorStatus(status); })
+          .then((status) => { if (!cancelled && status) setOrchestratorStatus(status); })
           .catch(() => {});
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => setTreeLoading(false));
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setTreeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedProjectId, selectedSessionId]);
 
   // ─── Tauri event listeners ─────────────────────────────────
@@ -662,6 +674,30 @@ function App() {
     [],
   );
 
+  const handleSendEnterToNode = useCallback(
+    async (nodeId: string) => {
+      try {
+        await writePty(nodeId, "\r");
+        setSuccess("Sent Enter to the live session.");
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [],
+  );
+
+  const handleStopNode = useCallback(
+    async (nodeId: string) => {
+      try {
+        await stopSession(nodeId);
+        setSuccess("Stopping session…");
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [],
+  );
+
   const handleMergeNode = useCallback(
     async (nodeId: string) => {
       try {
@@ -695,7 +731,7 @@ function App() {
       try {
         const rootNode = await createRootNode(selectedProjectId, label, prompt);
         setSessions((prev) => [rootNode, ...prev]);
-        setTreeNodes((prev) => [...prev, rootNode]);
+        setTreeNodes([rootNode]);
         setSelectedSessionId(rootNode.id);
         setSelectedNodeId(rootNode.id);
         setModal(null);
@@ -863,8 +899,8 @@ function App() {
       try {
         setIsGeneratingPlan(true);
         const nodes = await generatePlan(selectedProjectId, prompt, complexity);
-        // Add nodes to tree and select the root session
-        setTreeNodes((prev) => [...prev, ...nodes]);
+        // Replace the current tree with the generated session plan.
+        setTreeNodes(nodes);
         if (nodes.length > 0) {
           const rootNode = nodes[0];
           setSessions((prev) => [rootNode, ...prev]);
@@ -996,6 +1032,8 @@ function App() {
             agentSetupReminder={setupReminder}
             onOpenSettings={() => openAgentBay({ focusRole: getPrimaryMissingRole() })}
             onValidateRuntime={handleValidateNodeRuntime}
+            onSendEnterToNode={handleSendEnterToNode}
+            onStopNode={handleStopNode}
             onRetryNode={handleRetryNode}
             onResetNode={handleResetNode}
           />
