@@ -7,6 +7,7 @@ import type {
   AppSettings,
   DecisionNode,
   ModalType,
+  NodeTerminalSession,
   NodeStatus,
   OrchestratorMode,
   OrchestratorStatus,
@@ -26,6 +27,7 @@ import {
   mergeNodeBranch,
   deleteNodeBranch,
   writePty,
+  openNodeTerminal,
   pauseSession,
   resumeSession,
   stopSession,
@@ -53,6 +55,7 @@ import { SessionModal } from "./components/SessionModal";
 import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
 import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { ConfirmOpenTerminalDialog, NodeTerminalDialog } from "./components/NodeTerminalDialog";
 import { inferFlowModeFromNodes } from "./lib/flow-mode";
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -80,6 +83,9 @@ function App() {
   const [flowMode, setFlowMode] = useState<"linear" | "branching">("branching");
   const [sessions, setSessions] = useState<DecisionNode[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [manualTerminalSessions, setManualTerminalSessions] = useState<Record<string, NodeTerminalSession>>({});
+  const [pendingTerminalNodeId, setPendingTerminalNodeId] = useState<string | null>(null);
+  const [terminalDialogNodeId, setTerminalDialogNodeId] = useState<string | null>(null);
 
   // ─── Orchestrator state ──────────────────────────────────
   const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
@@ -705,6 +711,63 @@ function App() {
     [],
   );
 
+  const handleRequestOpenNodeTerminal = useCallback((nodeId: string) => {
+    setPendingTerminalNodeId(nodeId);
+  }, []);
+
+  const handleCancelOpenNodeTerminal = useCallback(() => {
+    setPendingTerminalNodeId(null);
+  }, []);
+
+  const handleConfirmOpenNodeTerminal = useCallback(async () => {
+    if (!pendingTerminalNodeId) return;
+
+    try {
+      const existing = manualTerminalSessions[pendingTerminalNodeId];
+
+      if (existing) {
+        setTerminalDialogNodeId(pendingTerminalNodeId);
+        setPendingTerminalNodeId(null);
+        setSuccess(`Opened agent terminal in ${existing.cwd}`);
+        return;
+      }
+
+      const terminal = await openNodeTerminal(pendingTerminalNodeId);
+      setManualTerminalSessions((prev) => ({
+        ...prev,
+        [pendingTerminalNodeId]: terminal,
+      }));
+      setTerminalDialogNodeId(pendingTerminalNodeId);
+      setPendingTerminalNodeId(null);
+      setSuccess(`Opened agent terminal in ${terminal.cwd}`);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [manualTerminalSessions, pendingTerminalNodeId]);
+
+  const handleCloseNodeTerminal = useCallback(async () => {
+    if (!terminalDialogNodeId) return;
+
+    const session = manualTerminalSessions[terminalDialogNodeId];
+    if (!session) {
+      setTerminalDialogNodeId(null);
+      return;
+    }
+
+    try {
+      await stopSession(session.session_id);
+      setManualTerminalSessions((prev) => {
+        const next = { ...prev };
+        delete next[terminalDialogNodeId];
+        return next;
+      });
+      setTerminalDialogNodeId(null);
+      setSuccess("Closed agent terminal.");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [manualTerminalSessions, terminalDialogNodeId]);
+
   const handleMergeNode = useCallback(
     async (nodeId: string) => {
       try {
@@ -794,6 +857,11 @@ function App() {
       const deletedSet = new Set(deletedIds);
       setTreeNodes((prev) => prev.filter((n) => !deletedSet.has(n.id)));
       setSelectedNodeId((prev) => (prev && deletedSet.has(prev) ? null : prev));
+      setManualTerminalSessions((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).filter(([nodeId]) => !deletedSet.has(nodeId)),
+        ),
+      );
       setSuccess("Node and branch deleted successfully");
       setModal(null);
     } catch (e) {
@@ -1003,6 +1071,25 @@ function App() {
       ? treeNodes.find((n) => n.id === modal.parentId) ?? null
       : null;
 
+  const knownNodes = useMemo(() => {
+    const map = new Map<string, DecisionNode>();
+    for (const node of sessions) map.set(node.id, node);
+    for (const node of treeNodes) map.set(node.id, node);
+    return map;
+  }, [sessions, treeNodes]);
+
+  const pendingTerminalNode = pendingTerminalNodeId
+    ? knownNodes.get(pendingTerminalNodeId) ?? null
+    : null;
+
+  const activeTerminalNode = terminalDialogNodeId
+    ? knownNodes.get(terminalDialogNodeId) ?? null
+    : null;
+
+  const activeTerminalSession = terminalDialogNodeId
+    ? manualTerminalSessions[terminalDialogNodeId] ?? null
+    : null;
+
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100">
       <div className="h-screen overflow-hidden p-4">
@@ -1048,9 +1135,25 @@ function App() {
             onStopNode={handleStopNode}
             onRetryNode={handleRetryNode}
             onResetNode={handleResetNode}
+            onOpenNodeTerminal={handleRequestOpenNodeTerminal}
           />
         </div>
       </div>
+
+      <ConfirmOpenTerminalDialog
+        open={!!pendingTerminalNode}
+        node={pendingTerminalNode}
+        hasExistingSession={!!(pendingTerminalNodeId && manualTerminalSessions[pendingTerminalNodeId])}
+        onCancel={handleCancelOpenNodeTerminal}
+        onConfirm={handleConfirmOpenNodeTerminal}
+      />
+
+      <NodeTerminalDialog
+        open={!!(activeTerminalNode && activeTerminalSession)}
+        node={activeTerminalNode}
+        terminal={activeTerminalSession}
+        onConfirmClose={handleCloseNodeTerminal}
+      />
 
       {/* Modals */}
       {modal?.kind === "create_project" && (

@@ -18,6 +18,7 @@ interface UseTreeLayoutInput {
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
   onDeleteNode?: (nodeId: string) => void;
+  onOpenNodeTerminal?: (nodeId: string) => void;
   orchestratorCurrentNodeId?: string | null;
   debugMode?: boolean;
   onResetNode?: (nodeId: string) => void;
@@ -39,6 +40,7 @@ export function useTreeLayout({
   onRunNode,
   onUpdateNode,
   onDeleteNode,
+  onOpenNodeTerminal,
   orchestratorCurrentNodeId,
   debugMode,
   onResetNode,
@@ -107,6 +109,7 @@ export function useTreeLayout({
           onRunNode: onRunNode ?? (() => {}),
           onUpdateNode: onUpdateNode ?? (() => {}),
           onDeleteNode: onDeleteNode ?? (() => {}),
+          onOpenNodeTerminal,
           isOrchestratorTarget: orchestratorCurrentNodeId === node.id,
           debugMode,
           onResetNode,
@@ -161,5 +164,5 @@ export function useTreeLayout({
     }
 
     return { flowNodes, flowEdges };
-  }, [nodes, selectedNodeId, ancestryPath, onFork, onMerge, onCreateStructuralNode, flowMode, onRunNode, onUpdateNode, onDeleteNode, orchestratorCurrentNodeId]);
+  }, [nodes, selectedNodeId, ancestryPath, onFork, onMerge, onCreateStructuralNode, flowMode, onRunNode, onUpdateNode, onDeleteNode, onOpenNodeTerminal, orchestratorCurrentNodeId, debugMode, onResetNode]);
 }

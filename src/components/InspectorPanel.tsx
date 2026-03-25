@@ -12,12 +12,13 @@ import {
   ScrollText,
   Trophy,
   Plus,
+  SquareTerminal,
 } from "lucide-react";
 import type { DecisionNode, Project } from "../types";
 import type { VisualNodeType } from "../types/node-types";
 import { usesPtySessionControls } from "../lib/agent-runtime";
 import { getNodeTypeMeta, inferNodeType } from "../lib/node-type-inference";
-import { formatRelativeTime } from "../lib/utils";
+import { formatRelativeTime, formatSessionRuntime } from "../lib/utils";
 import { Button } from "./ui/button";
 import { SessionTab } from "./inspector/SessionTab";
 
@@ -42,6 +43,8 @@ interface InspectorPanelProps {
   onStop?: (nodeId: string) => void;
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
+  onOpenTerminal?: (nodeId: string) => void;
+  manualTerminalSessionId?: string | null;
 }
 
 const statusTones: Record<string, string> = {
@@ -81,6 +84,8 @@ export function InspectorPanel({
   onStop,
   onRetryNode,
   onResetNode,
+  onOpenTerminal,
+  manualTerminalSessionId,
 }: InspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("Overview");
   const visualType: VisualNodeType = inferNodeType(node, allNodes);
@@ -99,6 +104,7 @@ export function InspectorPanel({
 
   const children = allNodes.filter((n) => n.parent_id === node.id);
   const isMergeNode = visualType === "merge" || node.status === "merged";
+  const isSessionRoot = node.parent_id === null;
 
   return (
     <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] shadow-xl overflow-hidden">
@@ -164,6 +170,7 @@ export function InspectorPanel({
           node={node}
           agentType={project.agent_type}
           isActive={activeTab === "Session"}
+          manualTerminalSessionId={manualTerminalSessionId}
         />
 
         {activeTab === "Overview" && (
@@ -315,9 +322,11 @@ export function InspectorPanel({
                 </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-slate-500">Updated</div>
+                <div className="text-xs text-slate-500">
+                  {isSessionRoot ? "Duration" : "Updated"}
+                </div>
                 <div className="mt-1 text-slate-100">
-                  {formatRelativeTime(node.updated_at)}
+                  {isSessionRoot ? formatSessionRuntime(node) : formatRelativeTime(node.updated_at)}
                 </div>
               </div>
             </div>
@@ -416,6 +425,16 @@ export function InspectorPanel({
                   </Button>
                 )}
               {/* Universal: Pause / Resume / Delete */}
+              {onOpenTerminal && (
+                <Button
+                  variant="outline"
+                  onClick={() => onOpenTerminal(node.id)}
+                  className="justify-start rounded-2xl border-sky-400/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
+                >
+                  <SquareTerminal className="mr-2 h-4 w-4" />
+                  {node.worktree_path ? "Open agent in worktree" : "Open agent on repo"}
+                </Button>
+              )}
               {canPause && (
                 <Button
                   variant="outline"

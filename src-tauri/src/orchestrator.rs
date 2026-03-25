@@ -13,6 +13,7 @@ use crate::models::*;
 use crate::pty_manager::PtyManager;
 use crate::sdk_manager::SdkManager;
 use crate::toon;
+use crate::validation;
 
 // ─── Handle for a running orchestration ─────────────────────────
 
@@ -351,7 +352,7 @@ async fn orchestration_loop(
         }
 
         match node_type {
-            "task" | "agent" => {
+            "task" | "agent" | "validation" => {
                 // Only run if the node is pending (skip already completed/failed)
                 if node.status == NodeStatus::Pending {
                     run_single_node(node_id, &db, &pty, &sdk, &app).await?;
@@ -603,6 +604,65 @@ async fn run_single_node(
     .await
     .map_err(|e| format!("Task: {e}"))??;
 
+    if node.node_type.as_deref() == Some("validation") {
+        let repo_for_plan = project.repo_path.clone();
+        let plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_for_plan))
+            .await
+            .map_err(|e| format!("Task: {e}"))??;
+
+        let branch_name = {
+            let repo_for_branch = project.repo_path.clone();
+            tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
+                .await
+                .map_err(|e| format!("Task: {e}"))?
+                .unwrap_or_else(|_| "main".to_string())
+        };
+        let commit_hash = {
+            let repo_for_commit = project.repo_path.clone();
+            tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
+                .await
+                .map_err(|e| format!("Task: {e}"))?
+                .ok()
+        };
+
+        {
+            let db_c = db.clone();
+            let nid = nid.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = db_c.lock().map_err(|e| format!("DB lock: {e}"))?;
+                conn.execute(
+                    "UPDATE decision_nodes
+                     SET branch_name=?1, worktree_path=NULL, commit_hash=?2, updated_at=?3
+                     WHERE id=?4",
+                    rusqlite::params![branch_name, commit_hash, db::now_unix(), nid],
+                )
+                .map_err(|e| format!("DB: {e}"))?;
+                Ok::<(), String>(())
+            })
+            .await
+            .map_err(|e| format!("Task: {e}"))??;
+        }
+
+        pty.clear_session_artifacts(&nid);
+        pty.spawn_session(
+            &nid,
+            &project.id,
+            &nid,
+            &plan.execution.program,
+            &plan.execution.args,
+            &project.repo_path,
+            plan.execution.stdin_injection.as_deref(),
+            plan.execution.auto_responses,
+            false,
+            db2,
+            app.clone(),
+        )
+        .map_err(|e| format!("PTY spawn: {e}"))?;
+
+        log::info!("Orchestrator spawned validation node: {} ({})", node.label, nid);
+        return Ok(());
+    }
+
     // Determine base commit
     let from_commit = if node.parent_id.is_none() {
         None
@@ -724,6 +784,7 @@ async fn run_single_node(
                 &wt_info.path,
                 shell.stdin_injection.as_deref(),
                 shell.auto_responses,
+                true,
                 db2,
                 app.clone(),
             )

@@ -4,6 +4,7 @@ import {
   Bot,
   GitMerge,
   Trophy,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { DecisionNode } from "../types";
@@ -22,13 +23,14 @@ const nodeTypeMeta: Record<VisualNodeType, NodeTypeMeta> = {
   agent: { label: "Agent", summary: "", icon: Bot, accentColor: "#3FB950" },
   merge: { label: "Merge", summary: "Convergence step", icon: GitMerge, accentColor: "#8957E5" },
   final: { label: "Final", summary: "Canonical path", icon: Trophy, accentColor: "#56D364" },
+  validation: { label: "Validation", summary: "Main branch check", icon: ShieldCheck, accentColor: "#F2CC60" },
 };
 
 export function getNodeTypeMeta(type: VisualNodeType): NodeTypeMeta {
   return nodeTypeMeta[type];
 }
 
-const validNodeTypes: VisualNodeType[] = ["task", "decision", "agent", "merge", "final"];
+const validNodeTypes: VisualNodeType[] = ["task", "decision", "agent", "merge", "final", "validation"];
 
 export function inferNodeType(
   node: DecisionNode,

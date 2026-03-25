@@ -15,13 +15,15 @@ use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
     CodexModelCatalog, CodexModelOption, CodexReasoningLevel, DecisionNode, ExecutionMode,
-    NodeRuntimeValidation, NodeStatus, OrchestratorMode, OrchestratorStatus, Project,
+    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode,
+    OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
 use crate::pty_manager::PtyManager;
 use crate::sdk_manager::SdkManager;
 use crate::toon;
+use crate::validation;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
@@ -400,6 +402,14 @@ fn build_merge_resolution_invocation(
             if let Some(value) = model {
                 args.push("--model".to_string());
                 args.push(value.to_string());
+
+                if matches!(
+                    value,
+                    "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
+                ) {
+                    args.push("-c".to_string());
+                    args.push("model_reasoning_effort=\"medium\"".to_string());
+                }
             }
             args.push(prompt.to_string());
 
@@ -441,6 +451,20 @@ fn active_session_backend(
     } else {
         None
     }
+}
+
+fn manual_terminal_session_id(node_id: &str) -> String {
+    format!("manual-terminal:{node_id}")
+}
+
+fn resolve_node_terminal_cwd(node: &DecisionNode, project: &Project) -> String {
+    if let Some(worktree_path) = node.worktree_path.as_ref() {
+        if std::path::Path::new(worktree_path).exists() {
+            return worktree_path.clone();
+        }
+    }
+
+    project.repo_path.clone()
 }
 
 // ─── Project CRUD ──────────────────────────────────────────────
@@ -659,6 +683,175 @@ fn make_branch_name(name: &str) -> String {
     format!("crongen/{slug}/{ts}")
 }
 
+async fn persist_node_runtime_fields(
+    db_handle: Arc<Mutex<Connection>>,
+    node: &DecisionNode,
+) -> Result<(), String> {
+    let nid = node.id.clone();
+    let branch_name = node.branch_name.clone();
+    let worktree_path = node.worktree_path.clone();
+    let commit_hash = node.commit_hash.clone();
+    let prompt = node.prompt.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_handle.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        conn.execute(
+            "UPDATE decision_nodes
+             SET prompt=?1, branch_name=?2, worktree_path=?3, commit_hash=?4, updated_at=?5
+             WHERE id=?6",
+            rusqlite::params![
+                prompt,
+                branch_name,
+                worktree_path,
+                commit_hash,
+                db::now_unix(),
+                nid
+            ],
+        )
+        .map_err(|e| format!("DB error: {e}"))?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))?
+}
+
+async fn create_post_merge_validation_node(
+    state: &AppState,
+    app: &AppHandle,
+    merged_node: &DecisionNode,
+    project: &Project,
+) -> Result<DecisionNode, String> {
+    let db_children = state.db.clone();
+    let parent_id = merged_node.id.clone();
+    if let Some(existing) = tokio::task::spawn_blocking(move || {
+        let conn = db_children
+            .lock()
+            .map_err(|e| format!("DB lock error: {e}"))?;
+        let children = db::node_get_children(&conn, &parent_id).map_err(|e| format!("{e}"))?;
+        Ok::<Option<DecisionNode>, String>(
+            children
+                .into_iter()
+                .find(|child| child.node_type.as_deref() == Some("validation")),
+        )
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??
+    {
+        return Ok(existing);
+    }
+
+    let repo_path = project.repo_path.clone();
+    let validation_plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_path))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?;
+
+    let repo_for_branch = project.repo_path.clone();
+    let branch_name = tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .unwrap_or_else(|_| "main".to_string());
+
+    let repo_for_commit = project.repo_path.clone();
+    let commit_hash = tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .ok();
+
+    let now = db::now_unix();
+    let mut node = DecisionNode {
+        id: uuid::Uuid::new_v4().to_string(),
+        project_id: project.id.clone(),
+        parent_id: Some(merged_node.id.clone()),
+        label: match &validation_plan {
+            Ok(plan) => plan.label.clone(),
+            Err(_) => "Validate merged build".to_string(),
+        },
+        prompt: match &validation_plan {
+            Ok(plan) => plan.prompt.clone(),
+            Err(err) => format!(
+                "Automatic validation could not determine a safe build command for this repository. {err}"
+            ),
+        },
+        branch_name,
+        worktree_path: None,
+        commit_hash,
+        status: match &validation_plan {
+            Ok(_) => NodeStatus::Pending,
+            Err(_) => NodeStatus::Failed,
+        },
+        exit_code: match &validation_plan {
+            Ok(_) => None,
+            Err(_) => Some(1),
+        },
+        node_type: Some("validation".to_string()),
+        scheduled_at: None,
+        started_at: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    let db_insert = state.db.clone();
+    let node_clone = node.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_insert
+            .lock()
+            .map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_create(&conn, &node_clone).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    if let Ok(plan) = validation_plan {
+        node = run_validation_node_with_plan(state, app, project, node, plan).await?;
+    }
+
+    Ok(node)
+}
+
+async fn run_validation_node_with_plan(
+    state: &AppState,
+    app: &AppHandle,
+    project: &Project,
+    mut node: DecisionNode,
+    plan: validation::ValidationPlan,
+) -> Result<DecisionNode, String> {
+    let repo_for_branch = project.repo_path.clone();
+    node.branch_name = tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .unwrap_or_else(|_| "main".to_string());
+
+    let repo_for_commit = project.repo_path.clone();
+    node.commit_hash = tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .ok();
+    node.worktree_path = None;
+    node.prompt = plan.prompt;
+
+    persist_node_runtime_fields(state.db.clone(), &node).await?;
+
+    state.pty.clear_session_artifacts(&node.id);
+    state
+        .pty
+        .spawn_session(
+            &node.id,
+            &project.id,
+            &node.id,
+            &plan.execution.program,
+            &plan.execution.args,
+            &project.repo_path,
+            plan.execution.stdin_injection.as_deref(),
+            plan.execution.auto_responses,
+            false,
+            state.db.clone(),
+            app.clone(),
+        )
+        .map_err(|e| format!("Failed to spawn validation session: {e}"))?;
+
+    node.status = NodeStatus::Running;
+    Ok(node)
+}
+
 #[tauri::command]
 pub async fn run_project_now(
     state: State<'_, AppState>,
@@ -774,6 +967,7 @@ pub async fn run_project_now(
                     &wt_info.path,
                     shell.stdin_injection.as_deref(),
                     shell.auto_responses,
+                    true,
                     db2,
                     app,
                 )
@@ -975,6 +1169,7 @@ pub async fn create_structural_node(
 #[tauri::command]
 pub async fn merge_node_branch(
     state: State<'_, AppState>,
+    app: AppHandle,
     node_id: String,
 ) -> Result<git_manager::MergeResult, String> {
     let db = state.db.clone();
@@ -1157,6 +1352,15 @@ pub async fn merge_node_branch(
         }
 
         log::info!("Merged node {} branch {}", node.id, node.branch_name);
+
+        if let Err(err) = create_post_merge_validation_node(state.inner(), &app, &node, &project).await
+        {
+            log::warn!(
+                "Merged node {} but failed to create post-merge validation: {}",
+                node.id,
+                err
+            );
+        }
     }
 
     Ok(result)
@@ -1306,8 +1510,6 @@ pub async fn run_node(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    ensure_provider_ready(&project.agent_type, "execution").await?;
-
     // 3. Ensure the repo path is a git repo
     let repo_path = project.repo_path.clone();
     tokio::task::spawn_blocking(move || {
@@ -1315,6 +1517,17 @@ pub async fn run_node(
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
+
+    let is_validation = node.node_type.as_deref() == Some("validation");
+    if !is_validation {
+        ensure_provider_ready(&project.agent_type, "execution").await?;
+    } else {
+        let repo_for_validation = project.repo_path.clone();
+        let plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_for_validation))
+            .await
+            .map_err(|e| format!("Task error: {e}"))??;
+        return run_validation_node_with_plan(state.inner(), &app, &project, node, plan).await;
+    }
 
     // 4. Determine base commit: HEAD for root, walk ancestors for child
     let from_commit = if node.parent_id.is_none() {
@@ -1427,6 +1640,7 @@ pub async fn run_node(
                     &wt_info.path,
                     shell.stdin_injection.as_deref(),
                     shell.auto_responses,
+                    true,
                     db2,
                     app,
                 )
@@ -1569,6 +1783,61 @@ pub async fn get_session_output(
     session_id: String,
 ) -> Result<Option<String>, String> {
     Ok(state.pty.get_buffered_output(&session_id))
+}
+
+#[tauri::command]
+pub async fn open_node_terminal(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    node_id: String,
+) -> Result<NodeTerminalSession, String> {
+    let db = state.db.clone();
+    let nid = node_id.clone();
+    let (node, project) = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let node = db::node_get_by_id(&conn, &nid).map_err(|e| format!("{e}"))?;
+        let project = db::project_get_by_id(&conn, &node.project_id).map_err(|e| format!("{e}"))?;
+        Ok::<(DecisionNode, Project), String>((node, project))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    let cwd = resolve_node_terminal_cwd(&node, &project);
+    let session_id = manual_terminal_session_id(&node.id);
+    let execution_model = get_settings().await.ok().and_then(|s| s.execution_model);
+    let effective_model = match &project.type_config {
+        AgentTypeConfig::ClaudeCode(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
+        AgentTypeConfig::Codex(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
+        AgentTypeConfig::Gemini(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
+        AgentTypeConfig::Custom(_) => None,
+    };
+
+    if !state.pty.has_session(&session_id) {
+        state.pty.clear_session_artifacts(&session_id);
+        let shell = agent_templates::build_interactive_terminal_command(
+            &project.agent_type,
+            &project.type_config,
+            execution_model.as_deref(),
+        );
+        state
+            .pty
+            .spawn_detached_shell_session(
+                &session_id,
+                &project.id,
+                &shell.program,
+                &shell.args,
+                &cwd,
+                app,
+            )
+            .map_err(|e| format!("Failed to open agent terminal: {e}"))?;
+    }
+
+    Ok(NodeTerminalSession {
+        session_id,
+        cwd,
+        agent_label: agent_label(&project.agent_type).to_string(),
+        model: effective_model,
+    })
 }
 
 #[tauri::command]
@@ -2216,6 +2485,23 @@ mod tests {
             .iter()
             .any(|arg| arg == "--output-last-message"));
         assert!(invocation.output_file.is_some());
+    }
+
+    #[test]
+    fn codex_merge_resolution_clamps_reasoning_for_fast_model() {
+        let invocation = build_merge_resolution_invocation(
+            &AgentType::Codex,
+            "/tmp",
+            "Resolve the merge",
+            Some("gpt-5-codex-mini"),
+        )
+        .expect("codex invocation");
+
+        assert!(invocation.args.iter().any(|arg| arg == "-c"));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
     }
 
     #[test]

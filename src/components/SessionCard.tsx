@@ -1,6 +1,6 @@
 import { ChevronRight, Clock3, Play, CheckCircle2, XCircle, Pause, GitMerge } from "lucide-react";
 import type { DecisionNode, NodeStatus } from "../types";
-import { formatRelativeTime } from "../lib/utils";
+import { formatSessionRuntime } from "../lib/utils";
 
 const statusConfig: Record<NodeStatus, { icon: React.ElementType; label: string; tone: string }> = {
   pending: { icon: Clock3, label: "Pending", tone: "text-slate-400" },
@@ -43,7 +43,7 @@ export function SessionCard({ session, isSelected, onSelect }: SessionCardProps)
           </div>
         )}
         <div className="mt-1.5 text-[11px] text-slate-600">
-          {formatRelativeTime(session.created_at)}
+          {formatSessionRuntime(session)}
         </div>
       </div>
       <ChevronRight className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${isSelected ? "text-sky-300 rotate-90" : "text-slate-600"}`} />

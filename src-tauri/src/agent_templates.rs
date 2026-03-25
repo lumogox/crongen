@@ -62,6 +62,39 @@ pub fn build_shell_command(
     }
 }
 
+/// Builds an interactive PTY command for the configured agent without sending
+/// an initial task prompt. This is used when the user wants to drop into the
+/// same coding agent inside a node's workspace.
+pub fn build_interactive_terminal_command(
+    agent_type: &AgentType,
+    config: &AgentTypeConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
+    match (agent_type, config) {
+        (AgentType::ClaudeCode, AgentTypeConfig::ClaudeCode(cfg)) => {
+            build_claude_interactive_command(cfg, default_model)
+        }
+        (AgentType::Codex, AgentTypeConfig::Codex(cfg)) => {
+            build_codex_interactive_command(cfg, default_model)
+        }
+        (AgentType::Gemini, AgentTypeConfig::Gemini(cfg)) => {
+            build_gemini_interactive_command(cfg, default_model)
+        }
+        (AgentType::Custom, AgentTypeConfig::Custom(cfg)) => ShellExecution {
+            program: cfg.shell.as_deref().unwrap_or("bash").to_string(),
+            args: vec![],
+            stdin_injection: None,
+            auto_responses: vec![],
+        },
+        _ => ShellExecution {
+            program: default_shell_for_type(agent_type).to_string(),
+            args: vec![],
+            stdin_injection: None,
+            auto_responses: vec![],
+        },
+    }
+}
+
 fn build_claude_code_command(
     prompt: &str,
     cfg: &ClaudeCodeConfig,
@@ -122,6 +155,54 @@ fn build_claude_code_command(
     })
 }
 
+fn build_claude_interactive_command(
+    cfg: &ClaudeCodeConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
+    let mut args = Vec::new();
+
+    if cfg.dangerously_skip_permissions {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
+
+    let model = cfg.model.as_deref().or(default_model);
+    if let Some(m) = model {
+        args.push("--model".to_string());
+        args.push(m.to_string());
+    }
+
+    if let Some(budget) = cfg.max_budget_usd {
+        args.push("--max-budget-usd".to_string());
+        args.push(format!("{budget:.2}"));
+    }
+
+    if let Some(ref tools) = cfg.allowed_tools {
+        for tool in tools.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()) {
+            args.push("--allowedTools".to_string());
+            args.push(tool.to_string());
+        }
+    }
+
+    if let Some(ref tools) = cfg.disallowed_tools {
+        for tool in tools.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()) {
+            args.push("--disallowedTools".to_string());
+            args.push(tool.to_string());
+        }
+    }
+
+    if let Some(ref sys_prompt) = cfg.append_system_prompt {
+        args.push("--append-system-prompt".to_string());
+        args.push(sys_prompt.clone());
+    }
+
+    ShellExecution {
+        program: "claude".to_string(),
+        args,
+        stdin_injection: None,
+        auto_responses: vec![],
+    }
+}
+
 fn build_codex_exec_command(
     prompt: &str,
     cfg: &CodexConfig,
@@ -140,6 +221,14 @@ fn build_codex_exec_command(
     if let Some(model) = cfg.model.as_deref().or(default_model) {
         args.push("--model".to_string());
         args.push(model.to_string());
+
+        if matches!(
+            model,
+            "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
+        ) {
+            args.push("-c".to_string());
+            args.push("model_reasoning_effort=\"medium\"".to_string());
+        }
     }
 
     if let Some(ref sandbox) = cfg.sandbox {
@@ -164,6 +253,46 @@ fn build_codex_exec_command(
         args,
         stdin_injection: Some(prompt.to_string()),
     })
+}
+
+fn build_codex_interactive_command(
+    cfg: &CodexConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
+    let mut args = Vec::new();
+
+    if let Some(flag) = codex_approval_flag(cfg.approval_mode.as_deref()) {
+        args.push(flag.to_string());
+    }
+
+    if let Some(model) = cfg.model.as_deref().or(default_model) {
+        args.push("--model".to_string());
+        args.push(model.to_string());
+
+        if matches!(
+            model,
+            "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
+        ) {
+            args.push("-c".to_string());
+            args.push("model_reasoning_effort=\"medium\"".to_string());
+        }
+    }
+
+    if let Some(ref sandbox) = cfg.sandbox {
+        args.push("--sandbox".to_string());
+        args.push(sandbox.clone());
+    }
+
+    if cfg.skip_git_check {
+        args.push("--skip-git-repo-check".to_string());
+    }
+
+    ShellExecution {
+        program: "codex".to_string(),
+        args,
+        stdin_injection: None,
+        auto_responses: vec![],
+    }
 }
 
 fn codex_approval_flag(mode: Option<&str>) -> Option<&'static str> {
@@ -223,6 +352,34 @@ fn build_gemini_command(
                 submit: true,
             },
         ],
+    }
+}
+
+fn build_gemini_interactive_command(
+    cfg: &GeminiConfig,
+    default_model: Option<&str>,
+) -> ShellExecution {
+    let mut args = Vec::new();
+
+    if cfg.yolo {
+        args.push("--yolo".to_string());
+    }
+
+    if let Some(model) = cfg.model.as_deref().or(default_model) {
+        args.push("--model".to_string());
+        args.push(model.to_string());
+    }
+
+    if let Some(ref sandbox) = cfg.sandbox {
+        args.push("--sandbox".to_string());
+        args.push(sandbox.clone());
+    }
+
+    ShellExecution {
+        program: "gemini".to_string(),
+        args,
+        stdin_injection: None,
+        auto_responses: vec![],
     }
 }
 
@@ -308,5 +465,58 @@ mod tests {
         };
 
         assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
+    }
+
+    #[test]
+    fn codex_exec_clamps_reasoning_for_fast_model() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Implement the feature",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: Some("gpt-5-codex-mini".to_string()),
+                sandbox: None,
+                approval_mode: None,
+                skip_git_check: false,
+                json_output: false,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+
+        assert!(sdk.args.iter().any(|arg| arg == "-c"));
+        assert!(sdk
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+    }
+
+    #[test]
+    fn codex_interactive_clamps_reasoning_for_fast_model() {
+        let shell = build_interactive_terminal_command(
+            &AgentType::Codex,
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: Some("gpt-5-codex-mini".to_string()),
+                sandbox: Some("workspace-write".to_string()),
+                approval_mode: Some("full-auto".to_string()),
+                skip_git_check: true,
+                json_output: false,
+            }),
+            None,
+        );
+
+        assert_eq!(shell.program, "codex");
+        assert!(shell.args.iter().any(|arg| arg == "--full-auto"));
+        assert!(shell.args.iter().any(|arg| arg == "--skip-git-repo-check"));
+        assert!(shell.args.iter().any(|arg| arg == "-c"));
+        assert!(shell
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
     }
 }

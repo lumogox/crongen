@@ -118,6 +118,13 @@ export interface NodeRuntimeValidation {
   message: string;
 }
 
+export interface NodeTerminalSession {
+  session_id: string;
+  cwd: string;
+  agent_label: string;
+  model?: string | null;
+}
+
 // ─── Git Operations ───────────────────────────────────────────
 
 export interface MergeResult {
@@ -144,6 +151,7 @@ export interface DecisionNodeData {
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
   onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
   onDeleteNode: (nodeId: string) => void;
+  onOpenNodeTerminal?: (nodeId: string) => void;
   isOrchestratorTarget?: boolean;
   debugMode?: boolean;
   onResetNode?: (nodeId: string) => void;

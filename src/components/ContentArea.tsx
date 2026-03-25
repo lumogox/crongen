@@ -54,6 +54,8 @@ interface ContentAreaProps {
   onStopNode?: (nodeId: string) => void;
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
+  onOpenNodeTerminal?: (nodeId: string) => void;
+  manualTerminalSessionId?: string | null;
 }
 
 export function ContentArea(props: ContentAreaProps) {
@@ -165,6 +167,8 @@ function ContentAreaInner({
   onStopNode,
   onRetryNode,
   onResetNode,
+  onOpenNodeTerminal,
+  manualTerminalSessionId,
 }: ContentAreaProps) {
   const selectedNode = selectedNodeId
     ? treeNodes.find((n) => n.id === selectedNodeId) ?? null
@@ -478,6 +482,7 @@ function ContentAreaInner({
                   onRunNode={onRunNode}
                   onUpdateNode={onUpdateNode}
                   onDeleteNode={onDeleteNode}
+                  onOpenNodeTerminal={onOpenNodeTerminal}
                   orchestratorCurrentNodeId={orchestratorStatus?.current_node_id}
                   orchestratorActive={!!showOrchestratorActivity}
                   debugMode={debugMode}
@@ -534,6 +539,8 @@ function ContentAreaInner({
               onStop={onStopNode}
               onRetryNode={onRetryNode}
               onResetNode={onResetNode}
+              onOpenTerminal={onOpenNodeTerminal}
+              manualTerminalSessionId={manualTerminalSessionId}
             />
           ) : debugMode && treeNodes.length > 0 ? (
             <ToonViewer nodes={treeNodes} />

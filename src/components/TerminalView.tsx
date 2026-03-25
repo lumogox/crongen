@@ -4,14 +4,16 @@ import { useTerminal } from "../hooks/useTerminal";
 interface TerminalViewProps {
   sessionId: string | null;
   status: NodeStatus;
+  isInteractive?: boolean;
 }
 
-export function TerminalView({ sessionId, status }: TerminalViewProps) {
-  const isRunning = status === "running";
-  // Don't initialize terminal for pending nodes — wait until the PTY session exists.
-  // When status transitions pending → running, effectiveSessionId changes null → nodeId,
-  // which triggers the useTerminal effect on a fully visible container.
-  const effectiveSessionId = status === "pending" ? null : sessionId;
+export function TerminalView({
+  sessionId,
+  status,
+  isInteractive = false,
+}: TerminalViewProps) {
+  const isRunning = isInteractive || status === "running";
+  const effectiveSessionId = sessionId;
   const { containerRef } = useTerminal({ sessionId: effectiveSessionId, isRunning });
 
   const showPlaceholder = !effectiveSessionId;

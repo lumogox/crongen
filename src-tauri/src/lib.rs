@@ -9,6 +9,7 @@ mod plan_generator;
 mod pty_manager;
 mod sdk_manager;
 mod toon;
+mod validation;
 #[cfg(windows)]
 mod windows_process;
 
@@ -87,6 +88,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::get_session_output,
+            commands::open_node_terminal,
             commands::pause_session,
             commands::resume_session,
             commands::stop_session,

@@ -12,6 +12,7 @@ import {
   Trophy,
   X,
   RotateCcw,
+  SquareTerminal,
 } from "lucide-react";
 import type { DecisionNodeData, NodeStatus } from "../types";
 import { getNodeTypeMeta } from "../lib/node-type-inference";
@@ -63,7 +64,20 @@ function ExecutionNodeInner({
   type: string;
   selected?: boolean;
 }) {
-  const { node, visualType, onFork: _onFork, onMerge, onCreateStructuralNode, onRunNode, onDeleteNode, flowMode, isOrchestratorTarget, debugMode, onResetNode } = data;
+  const {
+    node,
+    visualType,
+    onFork: _onFork,
+    onMerge,
+    onCreateStructuralNode,
+    onRunNode,
+    onDeleteNode,
+    onOpenNodeTerminal,
+    flowMode,
+    isOrchestratorTarget,
+    debugMode,
+    onResetNode,
+  } = data;
   const typeMeta = getNodeTypeMeta(visualType);
   const TypeIcon = typeMeta.icon;
   const isStructural = structuralTypes.has(visualType);
@@ -208,12 +222,30 @@ function ExecutionNodeInner({
             </div>
           </div>
 
-          <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium ${status.tone}`}
-          >
-            <StatusIcon className="h-3.5 w-3.5" />
-            {status.label}
-          </span>
+          <div className="flex shrink-0 items-start gap-2">
+            {onOpenNodeTerminal && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenNodeTerminal(node.id);
+                }}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border border-sky-400/20 bg-sky-500/10 text-sky-200 transition-all hover:bg-sky-500/20 hover:text-sky-100 focus-visible:opacity-100 ${
+                  selected
+                    ? "opacity-100"
+                    : "opacity-0 group-hover/node:opacity-100"
+                }`}
+                title={node.worktree_path ? "Open agent terminal in worktree" : "Open agent terminal on repo"}
+              >
+                <SquareTerminal className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <span
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-medium ${status.tone}`}
+            >
+              <StatusIcon className="h-3.5 w-3.5" />
+              {status.label}
+            </span>
+          </div>
         </div>
 
         {/* Subtitle */}

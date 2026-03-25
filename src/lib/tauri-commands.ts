@@ -7,6 +7,7 @@ import type {
   DecisionNode,
   MergeResult,
   NodeRuntimeValidation,
+  NodeTerminalSession,
   OrchestratorStatus,
   Project,
 } from "../types";
@@ -167,6 +168,12 @@ export async function getSessionOutput(
   sessionId: string,
 ): Promise<string | null> {
   return invoke("get_session_output", { sessionId });
+}
+
+export async function openNodeTerminal(
+  nodeId: string,
+): Promise<NodeTerminalSession> {
+  return invoke("open_node_terminal", { nodeId });
 }
 
 export async function pauseSession(sessionId: string): Promise<void> {

@@ -79,23 +79,19 @@ impl PtyManager {
         self.completion_tx.subscribe()
     }
 
-    /// Spawn a new PTY session for a project-scoped node run.
-    ///
-    /// Uses the node ID as session ID (1:1 mapping between nodes and PTY sessions).
-    /// The process runs in the specified working directory (worktree path).
-    /// Output is base64-encoded and emitted as `pty_output` Tauri events.
-    /// On process exit, node status is updated in DB and `session_ended` is emitted.
-    pub fn spawn_session(
+    fn spawn_session_internal(
         &self,
         session_id: &str,
         project_id: &str,
-        node_id: &str,
+        tracked_node_id: Option<&str>,
         program: &str,
         args: &[String],
         cwd: &str,
         stdin_injection: Option<&str>,
         auto_responses: Vec<AutoResponse>,
-        db: Arc<Mutex<rusqlite::Connection>>,
+        persist_repo_state: bool,
+        emit_lifecycle_events: bool,
+        db: Option<Arc<Mutex<rusqlite::Connection>>>,
         app: AppHandle,
     ) -> Result<()> {
         let pty_system = NativePtySystem::default();
@@ -191,7 +187,7 @@ impl PtyManager {
                     master: pair.master,
                     process_id,
                     project_id: project_id.to_string(),
-                    node_id: node_id.to_string(),
+                    node_id: tracked_node_id.unwrap_or(session_id).to_string(),
                 },
             );
         }
@@ -200,25 +196,31 @@ impl PtyManager {
             buffers.insert(session_id.to_string(), Vec::new());
         }
 
-        // Update node status to Running
-        if let Ok(conn) = db.lock() {
-            let _ = db::node_update_status(&conn, node_id, &NodeStatus::Running, None);
+        // Update node status to Running for tracked node sessions.
+        if let (Some(node_id), Some(db_handle)) = (tracked_node_id, db.as_ref()) {
+            if let Ok(conn) = db_handle.lock() {
+                let _ = db::node_update_status(&conn, node_id, &NodeStatus::Running, None);
+            }
         }
 
-        // Emit session_started event
-        let _ = app.emit(
-            "session_started",
-            SessionStartedPayload {
-                session_id: session_id.to_string(),
-                node_id: node_id.to_string(),
-                project_id: project_id.to_string(),
-            },
-        );
+        // Emit lifecycle events only for tracked node sessions.
+        if emit_lifecycle_events {
+            if let Some(node_id) = tracked_node_id {
+                let _ = app.emit(
+                    "session_started",
+                    SessionStartedPayload {
+                        session_id: session_id.to_string(),
+                        node_id: node_id.to_string(),
+                        project_id: project_id.to_string(),
+                    },
+                );
+            }
+        }
 
         // Spawn reader thread: reads PTY output → buffer + base64 + log file → Tauri event
         // Also handles auto-responses: pattern-matches output and injects stdin responses.
         let sid = session_id.to_string();
-        let nid = node_id.to_string();
+        let tracked_node = tracked_node_id.map(ToString::to_string);
         let worktree_path = cwd.to_string();
         let sessions_cleanup = self.sessions.clone();
         let sessions_auto = self.sessions.clone();
@@ -331,54 +333,63 @@ impl PtyManager {
                 Err(_) => None,
             };
 
-            // Auto-commit any uncommitted agent work, then capture the final hash.
-            // Agents don't always commit their changes before exiting.
-            match crate::git_manager::auto_commit_worktree(&worktree_path) {
-                Ok(committed) => {
-                    if committed {
-                        log::info!("Auto-committed uncommitted work for node {}", nid);
+            if let Some(ref nid) = tracked_node {
+                // Auto-commit any uncommitted agent work, then capture the final hash.
+                // Agents don't always commit their changes before exiting.
+                if persist_repo_state {
+                    match crate::git_manager::auto_commit_worktree(&worktree_path) {
+                        Ok(committed) => {
+                            if committed {
+                                log::info!("Auto-committed uncommitted work for node {}", nid);
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Auto-commit failed for node {}: {e}", nid);
+                        }
+                    }
+                    match crate::git_manager::get_current_commit(&worktree_path) {
+                        Ok(final_hash) => {
+                            if let Some(db_handle) = db_reader.as_ref() {
+                                if let Ok(conn) = db_handle.lock() {
+                                    let _ = db::node_update_commit(&conn, nid, &final_hash);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to get final commit for node {}: {e}", nid);
+                        }
                     }
                 }
-                Err(e) => {
-                    log::warn!("Auto-commit failed for node {}: {e}", nid);
-                }
-            }
-            match crate::git_manager::get_current_commit(&worktree_path) {
-                Ok(final_hash) => {
-                    if let Ok(conn) = db_reader.lock() {
-                        let _ = db::node_update_commit(&conn, &nid, &final_hash);
+
+                // Update node status in DB
+                let status = match exit_code {
+                    Some(0) => NodeStatus::Completed,
+                    _ => NodeStatus::Failed,
+                };
+
+                if let Some(db_handle) = db_reader.as_ref() {
+                    if let Ok(conn) = db_handle.lock() {
+                        let _ = db::node_update_status(&conn, nid, &status, exit_code);
                     }
                 }
-                Err(e) => {
-                    log::warn!("Failed to get final commit for node {}: {e}", nid);
+
+                if emit_lifecycle_events {
+                    let _ = app_reader.emit(
+                        "session_ended",
+                        SessionEndedPayload {
+                            session_id: sid.clone(),
+                            node_id: nid.clone(),
+                            exit_code,
+                        },
+                    );
                 }
-            }
 
-            // Update node status in DB
-            let status = match exit_code {
-                Some(0) => NodeStatus::Completed,
-                _ => NodeStatus::Failed,
-            };
-
-            if let Ok(conn) = db_reader.lock() {
-                let _ = db::node_update_status(&conn, &nid, &status, exit_code);
-            }
-
-            // Emit session_ended event
-            let _ = app_reader.emit(
-                "session_ended",
-                SessionEndedPayload {
-                    session_id: sid.clone(),
+                // Notify orchestrator via broadcast channel
+                let _ = completion_tx.send(SessionCompletion {
                     node_id: nid.clone(),
                     exit_code,
-                },
-            );
-
-            // Notify orchestrator via broadcast channel
-            let _ = completion_tx.send(SessionCompletion {
-                node_id: nid,
-                exit_code,
-            });
+                });
+            }
 
             // Remove session from map (frees writer + master handles)
             {
@@ -397,6 +408,68 @@ impl PtyManager {
         );
 
         Ok(())
+    }
+
+    /// Spawn a new PTY session for a project-scoped node run.
+    ///
+    /// Uses the node ID as session ID (1:1 mapping between nodes and PTY sessions).
+    /// The process runs in the specified working directory (worktree path).
+    /// Output is base64-encoded and emitted as `pty_output` Tauri events.
+    /// On process exit, node status is updated in DB and `session_ended` is emitted.
+    pub fn spawn_session(
+        &self,
+        session_id: &str,
+        project_id: &str,
+        node_id: &str,
+        program: &str,
+        args: &[String],
+        cwd: &str,
+        stdin_injection: Option<&str>,
+        auto_responses: Vec<AutoResponse>,
+        persist_repo_state: bool,
+        db: Arc<Mutex<rusqlite::Connection>>,
+        app: AppHandle,
+    ) -> Result<()> {
+        self.spawn_session_internal(
+            session_id,
+            project_id,
+            Some(node_id),
+            program,
+            args,
+            cwd,
+            stdin_injection,
+            auto_responses,
+            persist_repo_state,
+            true,
+            Some(db),
+            app,
+        )
+    }
+
+    /// Spawn a detached interactive shell that is not tied to node runtime state.
+    pub fn spawn_detached_shell_session(
+        &self,
+        session_id: &str,
+        project_id: &str,
+        program: &str,
+        args: &[String],
+        cwd: &str,
+        app: AppHandle,
+    ) -> Result<()> {
+        self.spawn_session_internal(
+            session_id,
+            project_id,
+            None,
+            program,
+            args,
+            cwd,
+            None,
+            Vec::new(),
+            false,
+            false,
+            None,
+            app,
+        )
     }
 
     /// Write data to a PTY session (forwards user keystrokes from xterm.js).

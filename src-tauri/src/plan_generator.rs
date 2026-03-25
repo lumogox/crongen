@@ -98,6 +98,7 @@ struct PlannerInvocation {
     args: Vec<String>,
     current_dir: PathBuf,
     output_file: Option<PathBuf>,
+    schema_file: Option<PathBuf>,
 }
 
 fn planner_provider_name(provider: &AgentType) -> &'static str {
@@ -113,6 +114,48 @@ fn cleanup_output_file(output_file: Option<&PathBuf>) {
     if let Some(file) = output_file {
         let _ = fs::remove_file(file);
     }
+}
+
+fn write_plan_output_schema() -> Result<PathBuf, String> {
+    let schema_file =
+        std::env::temp_dir().join(format!("crongen-plan-schema-{}.json", uuid::Uuid::new_v4()));
+    let schema = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root"],
+        "properties": {
+            "root": {
+                "$ref": "#/$defs/planNode"
+            }
+        },
+        "$defs": {
+            "planNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["label", "prompt", "node_type", "children"],
+                "properties": {
+                    "label": { "type": "string" },
+                    "prompt": { "type": "string" },
+                    "node_type": {
+                        "type": "string",
+                        "enum": ["task", "decision", "agent", "merge", "final"]
+                    },
+                    "children": {
+                        "type": "array",
+                        "items": { "$ref": "#/$defs/planNode" }
+                    }
+                }
+            }
+        }
+    });
+
+    let schema_json = serde_json::to_string_pretty(&schema)
+        .map_err(|err| format!("Failed to serialize plan schema: {err}"))?;
+    fs::write(&schema_file, schema_json)
+        .map_err(|err| format!("Failed to write plan schema: {err}"))?;
+
+    Ok(schema_file)
 }
 
 fn planner_system_prompt(project_mode: &str, complexity: &str) -> &'static str {
@@ -198,11 +241,13 @@ fn build_planner_invocation(
                 args,
                 current_dir: PathBuf::from(repo_path),
                 output_file: None,
+                schema_file: None,
             })
         }
         AgentType::Codex => {
             let output_file =
                 std::env::temp_dir().join(format!("crongen-plan-{}.txt", uuid::Uuid::new_v4()));
+            let schema_file = write_plan_output_schema()?;
             let mut args = vec![
                 "exec".to_string(),
                 "--skip-git-repo-check".to_string(),
@@ -213,9 +258,16 @@ fn build_planner_invocation(
                 "--cd".to_string(),
                 repo_path.to_string(),
             ];
+            args.push("--output-schema".to_string());
+            args.push(schema_file.display().to_string());
             if let Some(m) = model {
                 args.push("--model".to_string());
                 args.push(m.to_string());
+
+                if matches!(m, "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3") {
+                    args.push("-c".to_string());
+                    args.push("model_reasoning_effort=\"medium\"".to_string());
+                }
             }
             args.push(full_prompt.to_string());
 
@@ -224,6 +276,7 @@ fn build_planner_invocation(
                 args,
                 current_dir: PathBuf::from(repo_path),
                 output_file: Some(output_file),
+                schema_file: Some(schema_file),
             })
         }
         AgentType::Gemini => Err("Gemini planning is coming soon.".to_string()),
@@ -312,6 +365,7 @@ pub async fn generate_plan(
 
     if !output.status.success() {
         cleanup_output_file(invocation.output_file.as_ref());
+        cleanup_output_file(invocation.schema_file.as_ref());
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         let details = if stderr.trim().is_empty() {
@@ -326,12 +380,17 @@ pub async fn generate_plan(
     }
 
     let raw_output = if let Some(output_file) = &invocation.output_file {
-        let contents = fs::read_to_string(output_file)
-            .map_err(|e| format!("Failed to read planner output: {e}"));
+        let contents = fs::read_to_string(output_file).map_err(|e| {
+            cleanup_output_file(Some(output_file));
+            cleanup_output_file(invocation.schema_file.as_ref());
+            format!("Failed to read planner output: {e}")
+        });
         cleanup_output_file(Some(output_file));
         let contents = contents?;
+        cleanup_output_file(invocation.schema_file.as_ref());
         contents
     } else {
+        cleanup_output_file(invocation.schema_file.as_ref());
         String::from_utf8_lossy(&output.stdout).to_string()
     };
     let stdout = raw_output.as_str();
@@ -484,7 +543,32 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--output-last-message"));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
+        cleanup_output_file(invocation.output_file.as_ref());
+        cleanup_output_file(invocation.schema_file.as_ref());
+    }
+
+    #[test]
+    fn planner_dispatch_clamps_reasoning_for_fast_codex_model() {
+        let invocation = build_planner_invocation(
+            &AgentType::Codex,
+            "Plan this task",
+            Some("gpt-5-codex-mini"),
+            "/tmp",
+        )
+        .expect("codex invocation");
+
+        assert!(invocation.args.iter().any(|arg| arg == "-c"));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        cleanup_output_file(invocation.output_file.as_ref());
+        cleanup_output_file(invocation.schema_file.as_ref());
     }
 
     #[test]

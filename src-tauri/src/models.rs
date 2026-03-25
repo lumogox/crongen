@@ -383,6 +383,14 @@ pub struct NodeRuntimeValidation {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeTerminalSession {
+    pub session_id: String,
+    pub cwd: String,
+    pub agent_label: String,
+    pub model: Option<String>,
+}
+
 /// Completion event emitted by PTY/SDK managers when a session finishes.
 #[derive(Debug, Clone)]
 pub struct SessionCompletion {

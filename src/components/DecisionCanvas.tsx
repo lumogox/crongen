@@ -25,6 +25,7 @@ interface DecisionCanvasProps {
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
   onDeleteNode?: (nodeId: string) => void;
+  onOpenNodeTerminal?: (nodeId: string) => void;
   orchestratorCurrentNodeId?: string | null;
   orchestratorActive?: boolean;
   debugMode?: boolean;
@@ -59,6 +60,7 @@ export function DecisionCanvas({
   onRunNode,
   onUpdateNode,
   onDeleteNode,
+  onOpenNodeTerminal,
   orchestratorCurrentNodeId,
   orchestratorActive,
   debugMode,
@@ -101,6 +103,7 @@ export function DecisionCanvas({
     onRunNode: onRunNode ?? (() => {}),
     onUpdateNode: onUpdateNode ?? (() => {}),
     onDeleteNode: onDeleteNode ?? (() => {}),
+    onOpenNodeTerminal,
     orchestratorCurrentNodeId,
     debugMode,
     onResetNode,
