@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Sparkles,
   TriangleAlert,
+  X,
   Zap,
 } from "lucide-react";
 
@@ -574,7 +575,7 @@ export function SettingsModal({
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !forceSetup) onClose(); }}>
       <DialogContent
-        showCloseButton={!forceSetup}
+        showCloseButton={false}
         className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-slate-700/70 bg-[#121a2a]/98 p-0 shadow-[0_32px_100px_rgba(2,6,23,0.62)] sm:max-w-4xl"
       >
         <div className="agent-bay-scanlines relative flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg">
@@ -633,6 +634,18 @@ export function SettingsModal({
                         Validate
                       </Button>
                     </>
+                  )}
+                  {!forceSetup && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={onClose}
+                      disabled={isSaving}
+                      aria-label="Close Agent Bay"
+                      className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
                   )}
                 </div>
               </div>
