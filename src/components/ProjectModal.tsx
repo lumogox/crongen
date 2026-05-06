@@ -3,13 +3,13 @@ import type { AgentType, AgentTypeConfig, Project } from "../types";
 import { AGENT_TEMPLATES, getAgentLabel } from "../lib/agent-templates";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -129,17 +129,22 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{dialogTitle}</DialogTitle>
-          <DialogDescription>
-            {mode === "edit"
+      <AppModalContent
+        titleBarLabel="Project"
+        onClose={onClose}
+        className="max-h-[calc(100vh-4rem)] sm:max-w-2xl"
+      >
+        <AppModalHeader
+          title={dialogTitle}
+          description={
+            mode === "edit"
               ? "Update how agents work with this folder."
-              : "Start from an empty folder or connect agents to code you already have."}
-          </DialogDescription>
-        </DialogHeader>
+              : "Start from an empty folder or connect agents to code you already have."
+          }
+        />
 
-        <FieldGroup>
+        <AppModalBody>
+          <FieldGroup>
           <Field>
             <FieldLabel>What are you starting from?</FieldLabel>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -280,17 +285,16 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
             </div>
             <FieldError>{showValidationErrors ? errors.agentType : undefined}</FieldError>
           </Field>
-        </FieldGroup>
+          </FieldGroup>
+        </AppModalBody>
 
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </DialogClose>
+        <AppModalFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave}>
             {mode === "edit" ? "Save changes" : "Add folder"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

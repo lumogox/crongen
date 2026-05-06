@@ -1,13 +1,12 @@
 import { useState } from "react";
 import type { AgentProviderReadiness, AgentRole } from "../types";
+import { Dialog } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,23 +73,23 @@ export function SessionModal({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>New Session</DialogTitle>
-          <DialogDescription>
-            {mode === "quick"
+      <AppModalContent titleBarLabel="Session" onClose={onClose} className="sm:max-w-md">
+        <AppModalHeader
+          title="New Session"
+          description={
+            mode === "quick"
               ? `Run a single ${executionAgentLabel} agent directly for the fastest path.`
               : mode === "manual"
                 ? "Design the execution tree manually, then run nodes when ready."
                 : activeAgentLabel === "Unconfigured"
                   ? "Describe the task and connect a planning agent first."
-                  : `Describe the task and ${planningAgentLabel} will generate a single-path execution plan.`}
-          </DialogDescription>
-        </DialogHeader>
+                  : `Describe the task and ${planningAgentLabel} will generate a single-path execution plan.`
+          }
+        />
 
-        {/* Mode toggle */}
-        <div className="flex items-center rounded-full border border-slate-700/70 bg-[#182235] p-0.5">
-          {onQuickRun && (
+        <AppModalBody>
+          <div className="flex items-center rounded-full border border-slate-700/70 bg-[#182235] p-0.5">
+            {onQuickRun && (
             <button
               onClick={() => { setMode("quick"); setGenError(null); }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -102,34 +101,34 @@ export function SessionModal({
               <Zap className="h-3 w-3" />
               Quick run
             </button>
-          )}
-          <button
-            onClick={() => { setMode("manual"); setGenError(null); }}
-            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              mode === "manual"
-                ? "bg-slate-100 text-slate-950"
-                : "text-slate-300 hover:text-slate-100"
-            }`}
-          >
-            <PenLine className="h-3 w-3" />
-            Manual
-          </button>
-          {onGeneratePlan && (
+            )}
             <button
-              onClick={() => setMode("generate")}
+              onClick={() => { setMode("manual"); setGenError(null); }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                mode === "generate"
+                mode === "manual"
                   ? "bg-slate-100 text-slate-950"
                   : "text-slate-300 hover:text-slate-100"
               }`}
             >
-              <Sparkles className="h-3 w-3" />
-              Plan
+              <PenLine className="h-3 w-3" />
+              Manual
             </button>
-          )}
-        </div>
+            {onGeneratePlan && (
+              <button
+                onClick={() => setMode("generate")}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mode === "generate"
+                    ? "bg-slate-100 text-slate-950"
+                    : "text-slate-300 hover:text-slate-100"
+                }`}
+              >
+                <Sparkles className="h-3 w-3" />
+                Plan
+              </button>
+            )}
+          </div>
 
-        <div className="space-y-4 py-2">
+          <div className="space-y-4 py-4">
           {mode !== "manual" && (
             activeStatus?.ready ? (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
@@ -228,22 +227,22 @@ export function SessionModal({
               </div>
             </div>
           )}
-        </div>
-
-        {/* Inline error display */}
-        {genError && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3.5 py-3 text-sm leading-snug">
-            <TriangleAlert className="size-4 shrink-0 mt-0.5 text-rose-400" />
-            <div className="min-w-0">
-              <div className="font-medium text-rose-200">{mode === "quick" ? "Run failed" : "Plan generation failed"}</div>
-              <pre className="mt-1.5 whitespace-pre-wrap break-all text-xs text-rose-300/80 font-mono max-h-40 overflow-y-auto">
-                {genError}
-              </pre>
-            </div>
           </div>
-        )}
 
-        <DialogFooter>
+          {genError && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3.5 py-3 text-sm leading-snug">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-rose-400" />
+              <div className="min-w-0">
+                <div className="font-medium text-rose-200">{mode === "quick" ? "Run failed" : "Plan generation failed"}</div>
+                <pre className="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap break-all font-mono text-xs text-rose-300/80">
+                  {genError}
+                </pre>
+              </div>
+            </div>
+          )}
+        </AppModalBody>
+
+        <AppModalFooter>
           <Button variant="outline" onClick={onClose} disabled={isGenerating}>
             Cancel
           </Button>
@@ -277,8 +276,8 @@ export function SessionModal({
               )}
             </Button>
           )}
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

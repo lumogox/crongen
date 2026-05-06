@@ -1,13 +1,13 @@
 import type { Project } from "../types";
 import {
   Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 
 interface DeleteConfirmProps {
@@ -19,25 +19,23 @@ interface DeleteConfirmProps {
 export function DeleteConfirm({ project, onConfirm, onClose }: DeleteConfirmProps) {
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Delete Project</DialogTitle>
-          <DialogDescription>
+      <AppModalContent titleBarLabel="Confirm" onClose={onClose} className="sm:max-w-sm">
+        <AppModalHeader title="Delete Project" />
+        <AppModalBody>
+          <p className="text-sm leading-6 text-slate-300">
             Are you sure you want to delete{" "}
             <strong className="font-semibold text-foreground">{project.name}</strong>?
             This will remove the project and all its session history. This
             action cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
-          </DialogClose>
+          </p>
+        </AppModalBody>
+        <AppModalFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button variant="destructive" onClick={onConfirm}>
             Delete
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

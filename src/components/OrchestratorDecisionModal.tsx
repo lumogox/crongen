@@ -1,12 +1,13 @@
 import { useState } from "react";
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import type { PendingDecision } from "../types";
 
@@ -25,14 +26,9 @@ export function OrchestratorDecisionModal({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Decision Required</DialogTitle>
-          <DialogDescription>
-            {decision.label}: {decision.prompt}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-2 py-2">
+      <AppModalContent titleBarLabel="Orchestrator" onClose={onClose} className="sm:max-w-lg">
+        <AppModalHeader title="Decision Required" description={`${decision.label}: ${decision.prompt}`} />
+        <AppModalBody className="space-y-2">
           {decision.options.map((option) => (
             <button
               key={option.node_id}
@@ -40,7 +36,7 @@ export function OrchestratorDecisionModal({
               className={`w-full rounded-xl border p-3 text-left transition-all ${
                 selectedId === option.node_id
                   ? "border-sky-400/40 bg-sky-500/10 ring-1 ring-sky-400/30"
-                  : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                  : "border-slate-700/70 bg-[#182235] hover:border-slate-500/80 hover:bg-[#243044]"
               }`}
             >
               <div className="text-sm font-medium text-slate-100">
@@ -51,8 +47,8 @@ export function OrchestratorDecisionModal({
               </div>
             </button>
           ))}
-        </div>
-        <DialogFooter>
+        </AppModalBody>
+        <AppModalFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -62,8 +58,8 @@ export function OrchestratorDecisionModal({
           >
             Confirm
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

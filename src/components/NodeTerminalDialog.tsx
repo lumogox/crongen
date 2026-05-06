@@ -3,13 +3,12 @@ import { AlertTriangle, SquareTerminal, X } from "lucide-react";
 import type { DecisionNode, NodeTerminalSession } from "../types";
 import { TerminalView } from "./TerminalView";
 import { Button } from "./ui/button";
+import { Dialog } from "./ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
+  AppModalBody,
+  AppModalContent,
+  AppModalHeader,
+} from "./ui/app-modal";
 
 function preventDialogDismiss(event: Event) {
   event.preventDefault();
@@ -38,32 +37,25 @@ export function ConfirmOpenTerminalDialog({
 
   return (
     <Dialog open={open}>
-      <DialogContent
-        showCloseButton={false}
+      <AppModalContent
+        titleBarLabel="Agent terminal"
+        onClose={onCancel}
         className="w-[min(36rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-hidden border-white/10 bg-[#07111f] p-0 text-slate-100 shadow-[0_30px_120px_rgba(2,6,23,0.7)]"
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
         onEscapeKeyDown={preventDialogDismiss}
       >
-        <div className="min-w-0 p-6">
-          <DialogHeader className="min-w-0 text-left">
-            <div className="flex items-center gap-2 text-sky-200">
-              <SquareTerminal className="h-4 w-4" />
-              <span className="text-xs uppercase tracking-[0.22em] text-slate-400">
-                Agent terminal
-              </span>
-            </div>
-            <DialogTitle className="mt-3 text-xl text-slate-50">
-              {hasExistingSession ? "Open existing terminal?" : "Open terminal here?"}
-            </DialogTitle>
-            <DialogDescription className="mt-2 break-words text-sm leading-6 text-slate-300">
-              {hasExistingSession
-                ? `This will reopen the live terminal for "${node.label}".`
-                : `This will start a fresh interactive agent terminal for "${node.label}".`}
-            </DialogDescription>
-          </DialogHeader>
+        <AppModalHeader
+          title={hasExistingSession ? "Open existing terminal?" : "Open terminal here?"}
+          description={
+            hasExistingSession
+              ? `This will reopen the live terminal for "${node.label}".`
+              : `This will start a fresh interactive agent terminal for "${node.label}".`
+          }
+        />
 
-          <div className="mt-5 min-w-0 rounded-2xl border border-white/10 bg-black/20 p-4">
+        <AppModalBody>
+          <div className="min-w-0 rounded-2xl border border-white/10 bg-black/20 p-4">
             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
               Location
             </div>
@@ -97,8 +89,8 @@ export function ConfirmOpenTerminalDialog({
               {hasExistingSession ? "Open terminal" : "Start terminal"}
             </Button>
           </div>
-        </div>
-      </DialogContent>
+        </AppModalBody>
+      </AppModalContent>
     </Dialog>
   );
 }
@@ -141,49 +133,51 @@ export function NodeTerminalDialog({
 
   return (
     <Dialog open={open}>
-      <DialogContent
-        showCloseButton={false}
+      <AppModalContent
+        titleBarLabel={`${terminalLabel} terminal`}
+        showTitleBarClose={false}
+        titleBarActions={
+          <Button
+            variant="outline"
+            onClick={() => setConfirmingClose(true)}
+            className="rounded-lg border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
+          >
+            <X className="h-4 w-4" />
+            Close
+          </Button>
+        }
         className="!w-[calc(100vw-1.5rem)] !max-w-[calc(100vw-1.5rem)] overflow-hidden border-white/10 bg-[#050b16] p-0 text-slate-100 shadow-[0_40px_140px_rgba(2,6,23,0.78)]"
+        shellClassName="h-[calc(100vh-2rem)] min-h-[620px]"
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
         onEscapeKeyDown={preventDialogDismiss}
       >
-        <div className="flex h-[calc(100vh-2rem)] min-h-[620px] flex-col">
-          <div className="border-b border-white/10 px-6 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-slate-500">
-                  <SquareTerminal className="h-4 w-4 text-sky-300" />
-                  {terminalLabel} terminal
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <div className="truncate text-xl font-semibold text-slate-50">
-                    {terminalLabel}
-                  </div>
-                  {terminal.model && (
-                    <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-200">
-                      {terminal.model}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2 text-sm text-slate-300">
-                  Task: <span className="text-slate-100">{node.label}</span>
-                </div>
-                <div className="mt-2 break-all font-mono text-xs leading-5 text-slate-400" title={terminal.cwd}>
-                  {terminal.cwd}
-                </div>
+        <div className="border-b border-white/10 px-6 py-5">
+          <div className="flex items-start gap-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-slate-500">
+                <SquareTerminal className="h-4 w-4 text-sky-300" />
+                {terminalLabel} terminal
               </div>
-
-              <Button
-                variant="outline"
-                onClick={() => setConfirmingClose(true)}
-                className="rounded-2xl border-rose-400/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
-              >
-                <X className="h-4 w-4" />
-                Close
-              </Button>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="truncate text-xl font-semibold text-slate-50">
+                  {terminalLabel}
+                </div>
+                {terminal.model && (
+                  <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2.5 py-1 text-[11px] font-medium text-sky-200">
+                    {terminal.model}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 text-sm text-slate-300">
+                Task: <span className="text-slate-100">{node.label}</span>
+              </div>
+              <div className="mt-2 break-all font-mono text-xs leading-5 text-slate-400" title={terminal.cwd}>
+                {terminal.cwd}
+              </div>
             </div>
           </div>
+        </div>
 
           {confirmingClose && (
             <div className="border-b border-white/10 px-6 py-4">
@@ -230,8 +224,7 @@ export function NodeTerminalDialog({
               />
             </div>
           </div>
-        </div>
-      </DialogContent>
+      </AppModalContent>
     </Dialog>
   );
 }

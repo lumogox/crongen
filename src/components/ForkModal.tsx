@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { DecisionNode } from "../types";
 import {
   Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -98,19 +99,21 @@ export function ForkModal({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{config.title}</DialogTitle>
-          <DialogDescription>
+      <AppModalContent titleBarLabel="Execution graph" onClose={onClose} className="sm:max-w-md">
+        <AppModalHeader
+          title={config.title}
+          description={
+            <>
             {config.description}
             {" "}From{" "}
             <strong className="font-semibold text-foreground">
               {parentNode.label}
             </strong>
             .
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
+            </>
+          }
+        />
+        <AppModalBody className="space-y-4">
           <div className="space-y-2">
             <Label>Label</Label>
             <Input
@@ -128,13 +131,13 @@ export function ForkModal({
               rows={4}
             />
             {executable && (
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-400">
                 This prompt will be sent to the agent when you click Run.
               </p>
             )}
           </div>
-        </div>
-        <DialogFooter>
+        </AppModalBody>
+        <AppModalFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -144,8 +147,8 @@ export function ForkModal({
           >
             {config.confirmLabel}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }

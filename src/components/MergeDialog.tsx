@@ -13,12 +13,12 @@ import {
 } from "lucide-react";
 import {
   Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
+import { AppModalContent } from "./ui/app-modal";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 import type { DecisionNode, MergeResult } from "../types";
@@ -172,10 +172,12 @@ export function MergeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <AppModalContent
+        titleBarLabel="Ship it"
+        onClose={() => onOpenChange(false)}
+        showTitleBarClose={step !== "merging"}
         className="overflow-hidden rounded-2xl border-white/10 bg-slate-950 p-0 text-slate-100 shadow-2xl"
         style={MERGE_DIALOG_STYLE}
-        showCloseButton={step !== "merging"}
       >
         {step === "preview" && (
           <PreviewStep
@@ -220,7 +222,7 @@ export function MergeDialog({
         {step === "error" && (
           <ErrorStep error={error} onClose={() => onOpenChange(false)} />
         )}
-      </DialogContent>
+      </AppModalContent>
     </Dialog>
   );
 }

@@ -14,13 +14,13 @@ import {
   createDefaultAgentConfigs,
   getAgentLabel,
 } from "../lib/agent-templates";
+import { Dialog } from "@/components/ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  AppModalBody,
+  AppModalContent,
+  AppModalFooter,
+  AppModalHeader,
+} from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,7 +34,6 @@ import {
   RefreshCw,
   Sparkles,
   TriangleAlert,
-  X,
   Zap,
 } from "lucide-react";
 
@@ -574,97 +573,76 @@ export function SettingsModal({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !forceSetup) onClose(); }}>
-      <DialogContent
-        showCloseButton={false}
+      <AppModalContent
+        titleBarLabel="Agent Bay"
+        onClose={onClose}
+        closeDisabled={isSaving}
+        showTitleBarClose={!forceSetup}
         className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-slate-700/70 bg-[#121a2a]/98 p-0 shadow-[0_32px_100px_rgba(2,6,23,0.62)] sm:max-w-4xl"
+        shellClassName="agent-bay-scanlines relative max-h-[calc(100vh-1.5rem)]"
       >
-        <div className="agent-bay-scanlines relative flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
 
-          <div className="relative flex min-h-10 items-center justify-between border-b border-slate-700/70 px-5 sm:px-6">
-            <div className="text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
-              Agent Bay
-            </div>
-            {!forceSetup && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={onClose}
-                disabled={isSaving}
-                aria-label="Close Agent Bay"
-                className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+        <AppModalHeader
+          className="relative"
+          title={view === "cli" ? "CLI settings" : onboarding ? "Choose your agents" : "Agent defaults"}
+          description={
+            view === "cli"
+              ? "Set default models and CLI arguments for each provider."
+              : "Pick one provider for both roles, or split planning and execution when you need different agents."
+          }
+          actions={
+            <>
+              {view === "cli" ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setView("providers")}
+                  disabled={isSaving}
+                  className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Agent defaults
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setView("cli")}
+                    disabled={isSaving}
+                    className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                  >
+                    <Settings className="h-4 w-4" />
+                    CLI settings
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing || isSaving}
+                    className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                  >
+                    {isRefreshing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4" />
+                    )}
+                    Validate
+                  </Button>
+                </>
+              )}
+            </>
+          }
+        />
 
-          <div className="relative border-b border-slate-700/70 px-5 py-4 sm:px-6">
-            <DialogHeader className="space-y-0 text-left">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <DialogTitle className="text-xl text-slate-50">
-                    {view === "cli" ? "CLI settings" : onboarding ? "Choose your agents" : "Agent defaults"}
-                  </DialogTitle>
-                  <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-300">
-                    {view === "cli"
-                      ? "Set default models and CLI arguments for each provider."
-                      : "Pick one provider for both roles, or split planning and execution when you need different agents."}
-                  </DialogDescription>
-                </div>
-
-                <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                  {view === "cli" ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => setView("providers")}
-                      disabled={isSaving}
-                      className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      Agent defaults
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        variant="outline"
-                        onClick={() => setView("cli")}
-                        disabled={isSaving}
-                        className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-                      >
-                        <Settings className="h-4 w-4" />
-                        CLI settings
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={handleRefresh}
-                        disabled={isRefreshing || isSaving}
-                        className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-                      >
-                        {isRefreshing ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
-                        )}
-                        Validate
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </DialogHeader>
-          </div>
-
-          <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-            {view === "cli" ? (
-              <CliSettingsView
-                draft={draft}
-                statuses={statusByType}
-                onModelChange={updateProviderModel}
-                onArgsChange={updateProviderArgs}
-              />
-            ) : (
-              <>
+        <AppModalBody className="relative">
+          {view === "cli" ? (
+            <CliSettingsView
+              draft={draft}
+              statuses={statusByType}
+              onModelChange={updateProviderModel}
+              onArgsChange={updateProviderArgs}
+            />
+          ) : (
+            <>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <CurrentRoleCard
                     role="planning"
@@ -719,11 +697,11 @@ export function SettingsModal({
                   );
                   })}
                 </div>
-              </>
-            )}
-          </div>
+            </>
+          )}
+        </AppModalBody>
 
-          <div className="relative flex flex-col-reverse gap-2 border-t border-slate-700/70 bg-[#101827] px-5 py-3 sm:flex-row sm:justify-end sm:px-6">
+        <AppModalFooter className="relative flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             {onboarding ? (
               <Button
                 variant="ghost"
@@ -761,9 +739,8 @@ export function SettingsModal({
                 </>
               )}
             </Button>
-          </div>
-        </div>
-      </DialogContent>
+        </AppModalFooter>
+      </AppModalContent>
     </Dialog>
   );
 }
