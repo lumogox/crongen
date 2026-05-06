@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Bot,
   Brain,
@@ -614,19 +615,21 @@ export function SettingsModal({
                     <Settings className="h-4 w-4" />
                     CLI settings
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleRefresh}
-                    disabled={isRefreshing || isSaving}
-                    className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-                  >
-                    {isRefreshing ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    Validate
-                  </Button>
+                  <Tooltip content="Checks local CLI availability, login state, and planning/execution support for each provider. This refreshes the readiness badges only; it does not save settings.">
+                    <Button
+                      variant="outline"
+                      onClick={handleRefresh}
+                      disabled={isRefreshing || isSaving}
+                      className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                    >
+                      {isRefreshing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                      Validate
+                    </Button>
+                  </Tooltip>
                 </>
               )}
             </>
