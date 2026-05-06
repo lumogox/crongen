@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Sparkles, GitFork, GitMerge, Play, PlayCircle, XCircle, Loader2, Settings, FileCode, CheckCircle2, Rocket } from "lucide-react";
 import type { DecisionNode, OrchestratorMode, OrchestratorStatus, Project } from "../types";
+import type { StructuralNodeType } from "../types/node-types";
 import { DecisionCanvas } from "./DecisionCanvas";
 import { InspectorPanel } from "./InspectorPanel";
 import { OrchestratorActivity } from "./OrchestratorActivity";
@@ -27,7 +28,8 @@ interface ContentAreaProps {
   onSelectNode: (id: string | null) => void;
   onForkNode: (nodeId: string) => void;
   onMergeNode: (nodeId: string) => void;
-  onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
+  onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
+  onPlanFromNode: (parentId: string) => void;
   onRunNow: (projectId: string) => void;
   onCloseTerminal: () => void;
   onPauseNode?: (nodeId: string) => void;
@@ -141,6 +143,7 @@ function ContentAreaInner({
   onForkNode,
   onMergeNode,
   onCreateStructuralNode,
+  onPlanFromNode,
   onRunNow,
   onCloseTerminal,
   onPauseNode,
@@ -472,7 +475,16 @@ function ContentAreaInner({
                 showAutoLayout={hasSelectedSession && hasCanvasNodes}
               />
               {hasSelectedSession && hasCanvasNodes ? (
-                <NodePalette flowMode={flowMode} disabled={!selectedNodeId} />
+                <NodePalette
+                  selectedNode={selectedNode}
+                  allNodes={treeNodes}
+                  onAddNode={(nodeType) => {
+                    if (selectedNodeId) onCreateStructuralNode(selectedNodeId, nodeType);
+                  }}
+                  onPlanFromNode={() => {
+                    if (selectedNodeId) onPlanFromNode(selectedNodeId);
+                  }}
+                />
               ) : null}
               <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-slate-700/70" style={{ backgroundColor: "#111827" }}>
                 {!hasSelectedSession ? (
@@ -480,7 +492,7 @@ function ContentAreaInner({
                     <div className="flex max-w-md flex-col items-center rounded-2xl border border-slate-700/70 bg-[#182235] px-6 py-5 text-center">
                       <p className="text-sm font-medium text-slate-200">No task selected</p>
                       <p className="mt-2 text-xs leading-5 text-slate-400">
-                        Create a task to start an execution tree. Drag tools appear after a task exists.
+                        Create a task to start an execution tree. Orchestration tools appear after a task exists.
                       </p>
                       <Button
                         onClick={onCreateSession}

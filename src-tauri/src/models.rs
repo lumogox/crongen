@@ -220,7 +220,7 @@ pub struct DecisionNode {
     pub commit_hash: Option<String>,
     pub status: NodeStatus,
     pub exit_code: Option<i32>,
-    pub node_type: Option<String>, // "task", "agent", "decision", "merge", "final"
+    pub node_type: Option<String>, // "task", "agent", "decision", "merge", "final", "validation"
     pub scheduled_at: Option<String>, // ISO 8601 datetime — only meaningful on root (session) nodes
     pub started_at: Option<i64>,
     pub created_at: i64,

@@ -13,9 +13,10 @@ import {
   Trophy,
   Plus,
   SquareTerminal,
+  CheckCircle2,
 } from "lucide-react";
 import type { DecisionNode, Project } from "../types";
-import type { VisualNodeType } from "../types/node-types";
+import type { StructuralNodeType, VisualNodeType } from "../types/node-types";
 import { usesPtySessionControls } from "../lib/agent-runtime";
 import { getNodeTypeMeta, inferNodeType } from "../lib/node-type-inference";
 import { formatRelativeTime, formatSessionRuntime } from "../lib/utils";
@@ -32,7 +33,7 @@ interface InspectorPanelProps {
   onClose: () => void;
   onFork: (nodeId: string) => void;
   onMerge: (nodeId: string) => void;
-  onCreateStructuralNode?: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
+  onCreateStructuralNode?: (parentId: string | null, nodeType: StructuralNodeType) => void;
   onPause?: (nodeId: string) => void;
   onResume?: (nodeId: string) => void;
   onDelete?: (nodeId: string) => void;
@@ -346,7 +347,7 @@ export function InspectorPanel({
                       className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <GitFork className="mr-2 h-4 w-4" />
-                      Add decision point
+                      Add decision
                     </Button>
                   )}
                   <Button
@@ -354,7 +355,7 @@ export function InspectorPanel({
                     className="justify-start rounded-2xl bg-slate-100 text-slate-950 hover:bg-slate-200"
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Add agent node
+                    Add work step
                   </Button>
                 </>
               )}
@@ -365,7 +366,7 @@ export function InspectorPanel({
                   className="justify-start rounded-2xl bg-slate-100 text-slate-950 hover:bg-slate-200"
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add agent node
+                  Add work step
                 </Button>
               )}
               {/* Agent (pending or terminal): Add agent, Add review, Merge */}
@@ -376,7 +377,7 @@ export function InspectorPanel({
                     className="justify-start rounded-2xl bg-slate-100 text-slate-950 hover:bg-slate-200"
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Add agent node
+                    Add work step
                   </Button>
                   {flowMode !== "linear" && (
                     <Button
@@ -385,7 +386,7 @@ export function InspectorPanel({
                       className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <GitMerge className="mr-2 h-4 w-4" />
-                      Add review step
+                      Add compare step
                     </Button>
                   )}
                   {node.status === "completed" && (
@@ -408,7 +409,26 @@ export function InspectorPanel({
                   className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                 >
                   <Trophy className="mr-2 h-4 w-4" />
-                  Add final output
+                  Add finish step
+                </Button>
+              )}
+              {["task", "agent", "merge", "final"].includes(visualType) && (
+                <Button
+                  variant="outline"
+                  onClick={() => onCreateStructuralNode?.(node.id, "validation")}
+                  className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Add validation step
+                </Button>
+              )}
+              {visualType === "validation" && (
+                <Button
+                  onClick={() => onCreateStructuralNode?.(node.id, "agent")}
+                  className="justify-start rounded-2xl bg-slate-100 text-slate-950 hover:bg-slate-200"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add corrective work step
                 </Button>
               )}
               {/* Run pending nodes */}

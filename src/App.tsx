@@ -40,6 +40,7 @@ import {
   submitOrchestratorDecision,
   cancelOrchestrator,
   generatePlan,
+  generatePlanChildren,
   getSettings,
   updateSettings,
   resetNodeStatus,
@@ -55,8 +56,10 @@ import { SessionModal } from "./components/SessionModal";
 import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
 import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { PlanExpansionModal } from "./components/PlanExpansionModal";
 import { ConfirmOpenTerminalDialog, NodeTerminalDialog } from "./components/NodeTerminalDialog";
 import { inferFlowModeFromNodes } from "./lib/flow-mode";
+import type { StructuralNodeType } from "./types/node-types";
 
 const DEFAULT_SETTINGS: AppSettings = {
   debug_mode: false,
@@ -67,6 +70,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   execution_model: null,
   agent_configs: createDefaultAgentConfigs(),
 };
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -216,6 +223,8 @@ function App() {
 
   // ─── Tauri event listeners ─────────────────────────────────
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     const unlisteners: (() => void)[] = [];
 
     listen<{ session_id: string; node_id: string; project_id: string }>("session_started", (event) => {
@@ -639,11 +648,15 @@ function App() {
   );
 
   const handleOpenStructuralNodeModal = useCallback(
-    (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => {
+    (parentId: string | null, nodeType: StructuralNodeType) => {
       setModal({ kind: "create_structural_node", parentId, nodeType });
     },
     [],
   );
+
+  const handleOpenPlanExpansion = useCallback((parentId: string) => {
+    setModal({ kind: "expand_plan", parentId });
+  }, []);
 
   const handleConfirmStructuralNode = useCallback(
     async (_parentId: string, label: string, prompt: string) => {
@@ -656,7 +669,11 @@ function App() {
           prompt,
           nodeType: modal.nodeType,
         });
-        setTreeNodes((prev) => [...prev, newNode]);
+        setTreeNodes((prev) => {
+          const next = [...prev, newNode];
+          setFlowMode(inferFlowModeFromNodes(next));
+          return next;
+        });
         setSelectedNodeId(newNode.id);
         setModal(null);
       } catch (e) {
@@ -664,6 +681,35 @@ function App() {
       }
     },
     [modal, selectedProjectId],
+  );
+
+  const handleConfirmPlanExpansion = useCallback(
+    async (prompt: string, complexity: "linear" | "branching") => {
+      if (modal?.kind !== "expand_plan" || !selectedProjectId) return;
+      if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
+      try {
+        setIsGeneratingPlan(true);
+        const nodes = await generatePlanChildren(
+          selectedProjectId,
+          modal.parentId,
+          prompt,
+          complexity,
+        );
+        setTreeNodes((prev) => {
+          const next = [...prev, ...nodes];
+          setFlowMode(inferFlowModeFromNodes(next));
+          return next;
+        });
+        setSelectedNodeId(nodes[0]?.id ?? modal.parentId);
+        setModal(null);
+        setSuccess(`Generated ${nodes.length} orchestration step${nodes.length === 1 ? "" : "s"}`);
+      } catch (e) {
+        throw e;
+      } finally {
+        setIsGeneratingPlan(false);
+      }
+    },
+    [guardAgentRole, modal, selectedProjectId, settings.planning_agent],
   );
 
   const handlePauseNode = useCallback(
@@ -1072,6 +1118,11 @@ function App() {
       ? treeNodes.find((n) => n.id === modal.parentId) ?? null
       : null;
 
+  const planParentNode =
+    modal?.kind === "expand_plan"
+      ? treeNodes.find((n) => n.id === modal.parentId) ?? null
+      : null;
+
   const knownNodes = useMemo(() => {
     const map = new Map<string, DecisionNode>();
     for (const node of sessions) map.set(node.id, node);
@@ -1110,6 +1161,7 @@ function App() {
             onForkNode={handleForkNode}
             onMergeNode={handleMergeNode}
             onCreateStructuralNode={handleOpenStructuralNodeModal}
+            onPlanFromNode={handleOpenPlanExpansion}
             onRunNow={handleRunNow}
             onCloseTerminal={() => setSelectedNodeId(null)}
             onPauseNode={handlePauseNode}
@@ -1234,6 +1286,15 @@ function App() {
           parentNode={structuralParentNode}
           mode={modal.nodeType}
           onConfirm={handleConfirmStructuralNode}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === "expand_plan" && planParentNode && (
+        <PlanExpansionModal
+          parentNode={planParentNode}
+          planningAgentLabel={getAgentLabel(settings.planning_agent)}
+          isGenerating={isGeneratingPlan}
+          onConfirm={handleConfirmPlanExpansion}
           onClose={() => setModal(null)}
         />
       )}

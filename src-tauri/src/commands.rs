@@ -1242,9 +1242,9 @@ pub async fn create_structural_node(
     node_type: String,
 ) -> Result<DecisionNode, String> {
     // Validate node_type
-    if !["task", "decision", "agent", "merge", "final"].contains(&node_type.as_str()) {
+    if !["task", "decision", "agent", "merge", "final", "validation"].contains(&node_type.as_str()) {
         return Err(format!(
-            "Invalid structural node type: {node_type}. Must be task, decision, agent, merge, or final"
+            "Invalid structural node type: {node_type}. Must be task, decision, agent, merge, final, or validation"
         ));
     }
 
@@ -2517,6 +2517,92 @@ pub async fn generate_plan(
     log::info!(
         "Generated plan with {} nodes for project {}",
         nodes.len(),
+        project_id
+    );
+    Ok(nodes)
+}
+
+#[tauri::command]
+pub async fn generate_plan_children(
+    state: State<'_, AppState>,
+    project_id: String,
+    parent_id: String,
+    prompt: String,
+    complexity: Option<String>,
+) -> Result<Vec<DecisionNode>, String> {
+    let settings = get_settings().await?;
+    let planning_agent = resolve_planning_agent(&settings)?;
+    ensure_provider_ready(&planning_agent, "planning").await?;
+
+    let db_mode = state.db.clone();
+    let pid = project_id.clone();
+    let parent = parent_id.clone();
+    let (project_mode, repo_path) = tokio::task::spawn_blocking(move || {
+        let conn = db_mode.lock().map_err(|e| format!("DB lock: {e}"))?;
+        let parent_node = db::node_get_by_id(&conn, &parent).map_err(|e| format!("Parent node: {e}"))?;
+        if parent_node.project_id != pid {
+            return Err("Parent node does not belong to the selected project.".to_string());
+        }
+        let project = db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))?;
+        if project.project_mode == "blank" {
+            let roots = db::node_get_roots(&conn, &pid).map_err(|e| format!("{e}"))?;
+            let has_completed = roots.iter().any(|r| {
+                r.status == crate::models::NodeStatus::Completed
+                    || r.status == crate::models::NodeStatus::Merged
+            });
+            if has_completed {
+                return Ok::<(String, String), String>(("existing".to_string(), project.repo_path));
+            }
+        }
+        Ok((project.project_mode, project.repo_path))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    let complexity_str = complexity.as_deref().unwrap_or("branching");
+    let planning_config = settings_agent_config(&planning_agent, Some(&settings));
+    let planning_model = planning_config
+        .as_ref()
+        .and_then(agent_config_model)
+        .or_else(|| settings.planning_model.clone());
+    let planning_extra_args = planning_config
+        .as_ref()
+        .map(agent_config_extra_args)
+        .unwrap_or(&[]);
+    let plan = plan_generator::generate_plan(
+        &planning_agent,
+        &prompt,
+        &project_mode,
+        planning_model.as_deref(),
+        planning_extra_args,
+        complexity_str,
+        &repo_path,
+    )
+    .await?;
+
+    let plan = plan_generator::normalize_plan_for_complexity(plan, complexity_str);
+    let nodes = plan_generator::plan_children_to_nodes(&plan, &project_id, &parent_id);
+
+    if nodes.is_empty() {
+        return Err("Planner did not return any child steps.".to_string());
+    }
+
+    let db = state.db.clone();
+    let nodes_clone = nodes.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        for node in &nodes_clone {
+            db::node_create(&conn, node).map_err(|e| format!("DB error: {e}"))?;
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    log::info!(
+        "Generated {} child plan nodes under {} for project {}",
+        nodes.len(),
+        parent_id,
         project_id
     );
     Ok(nodes)

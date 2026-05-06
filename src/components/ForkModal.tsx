@@ -13,10 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import type { StructuralNodeType } from "../types/node-types";
 
-export type ForkModalMode = "fork" | "task" | "decision" | "agent" | "merge" | "final";
+export type ForkModalMode = "fork" | StructuralNodeType;
 
-const isExecutable = (mode: ForkModalMode) => mode === "fork" || mode === "task" || mode === "agent";
+const promptRunsWithAgent = (mode: ForkModalMode) => mode !== "decision" && mode !== "validation";
 
 const modeConfig: Record<
   ForkModalMode,
@@ -30,11 +31,11 @@ const modeConfig: Record<
     textPlaceholder: "What should the agent do? e.g. 'Set up a Vite project with React and TypeScript'",
   },
   agent: {
-    title: "Add Agent",
-    description: "Create an agent node that will execute a prompt in its own worktree.",
+    title: "Add Work Step",
+    description: "Create an executable step that runs the project's execution provider in its own worktree.",
     confirmLabel: "Create",
-    textLabel: "Agent prompt",
-    textPlaceholder: "What should this agent do? e.g. 'Implement the auth module using JWT'",
+    textLabel: "Work prompt",
+    textPlaceholder: "What should this step do? e.g. 'Implement the auth module using JWT'",
   },
   fork: {
     title: "Add Agent Branch",
@@ -51,18 +52,25 @@ const modeConfig: Record<
     textPlaceholder: "What choice is being made? e.g. 'TypeScript vs JavaScript'",
   },
   merge: {
-    title: "Add Review Step",
-    description: "A convergence point to compare branches and choose a winner. This node does NOT run an agent.",
+    title: "Add Compare Step",
+    description: "A convergence step that compares sibling branches and chooses or combines the best result.",
     confirmLabel: "Create",
-    textLabel: "Review criteria",
+    textLabel: "Comparison criteria",
     textPlaceholder: "How should branches be compared? e.g. 'Compare test coverage and code quality'",
   },
   final: {
-    title: "Add Final Output",
-    description: "Mark the approved canonical result. This node does NOT run an agent.",
+    title: "Add Finish Step",
+    description: "Polish and integrate the selected result after comparison.",
     confirmLabel: "Create",
-    textLabel: "Final notes",
-    textPlaceholder: "Any notes about the chosen result...",
+    textLabel: "Finish prompt",
+    textPlaceholder: "What final polish is needed? e.g. 'Update tests, docs, and UI copy'",
+  },
+  validation: {
+    title: "Add Validation Step",
+    description: "Run the repository's detected local checks after this point in the flow.",
+    confirmLabel: "Create",
+    textLabel: "Validation notes",
+    textPlaceholder: "What should be verified? e.g. 'Run build and tests before shipping'",
   },
 };
 
@@ -87,15 +95,17 @@ export function ForkModal({
         ? `${parentNode.label}-fork`
         : mode === "decision"
           ? `${parentNode.label}-decision`
-          : mode === "merge"
-            ? `${parentNode.label}-review`
+            : mode === "merge"
+              ? `${parentNode.label}-review`
             : mode === "final"
               ? `${parentNode.label}-final`
-              : `${parentNode.label}-task`;
+              : mode === "validation"
+                ? `${parentNode.label}-validate`
+                : `${parentNode.label}-task`;
 
   const [label, setLabel] = useState(defaultLabel);
   const [prompt, setPrompt] = useState("");
-  const executable = isExecutable(mode);
+  const usesAgentPrompt = promptRunsWithAgent(mode);
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -130,9 +140,14 @@ export function ForkModal({
               placeholder={config.textPlaceholder}
               rows={4}
             />
-            {executable && (
+            {usesAgentPrompt && (
               <p className="text-[11px] text-slate-400">
                 This prompt will be sent to the agent when you click Run.
+              </p>
+            )}
+            {mode === "validation" && (
+              <p className="text-[11px] text-slate-400">
+                Validation runs detected local checks; these notes are stored for context.
               </p>
             )}
           </div>

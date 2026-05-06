@@ -6,12 +6,15 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import type { DecisionNode } from "../types";
+import type { StructuralNodeType } from "../types/node-types";
 import { useTreeLayout } from "../hooks/useTreeLayout";
 import { ExecutionNode } from "./ExecutionNode";
 import { ExecutionEdge } from "./ExecutionEdge";
 
 const nodeTypes = { executionNode: ExecutionNode };
 const edgeTypes = { executionEdge: ExecutionEdge };
+const NODE_DROP_WIDTH = 260;
+const NODE_DROP_HEIGHT = 180;
 
 interface DecisionCanvasProps {
   treeNodes: DecisionNode[];
@@ -20,7 +23,7 @@ interface DecisionCanvasProps {
   onSelectNode: (id: string | null) => void;
   onForkNode: (nodeId: string) => void;
   onMergeNode: (nodeId: string) => void;
-  onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
+  onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
@@ -66,7 +69,7 @@ export function DecisionCanvas({
   debugMode,
   onResetNode,
 }: DecisionCanvasProps) {
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const nodeSignature = useMemo(
     () => treeNodes.map((node) => node.id).join("|"),
     [treeNodes],
@@ -87,7 +90,7 @@ export function DecisionCanvas({
   );
 
   const onCreateStructural = useCallback(
-    (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") =>
+    (parentId: string | null, nodeType: StructuralNodeType) =>
       onCreateStructuralNode(parentId, nodeType),
     [onCreateStructuralNode],
   );
@@ -161,11 +164,21 @@ export function DecisionCanvas({
         e.preventDefault();
         const type = e.dataTransfer.getData("application/crongen-node");
         if (!type) return;
-        const parentId = selectedNodeId;
+        const dropPosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        const hoveredNode = flowNodes.find((node) => {
+          const { x, y } = node.position;
+          return (
+            dropPosition.x >= x &&
+            dropPosition.x <= x + NODE_DROP_WIDTH &&
+            dropPosition.y >= y &&
+            dropPosition.y <= y + NODE_DROP_HEIGHT
+          );
+        });
+        const parentId = hoveredNode?.id ?? selectedNodeId;
         if (type === "task" && treeNodes.length > 0) return;
         if (type === "task") return;
         if (parentId) {
-          onCreateStructuralNode(parentId, type as "task" | "decision" | "agent" | "merge" | "final");
+          onCreateStructuralNode(parentId, type as StructuralNodeType);
         }
       }}
       nodesDraggable

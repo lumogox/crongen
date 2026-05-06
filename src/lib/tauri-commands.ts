@@ -11,6 +11,7 @@ import type {
   OrchestratorStatus,
   Project,
 } from "../types";
+import type { StructuralNodeType } from "../types/node-types";
 
 // ─── Project CRUD ──────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ export async function createStructuralNode(params: {
   parentId: string | null;
   label: string;
   prompt: string;
-  nodeType: string;
+  nodeType: StructuralNodeType;
 }): Promise<DecisionNode> {
   return invoke("create_structural_node", {
     projectId: params.projectId,
@@ -306,4 +307,13 @@ export async function generatePlan(
   complexity?: "linear" | "branching",
 ): Promise<DecisionNode[]> {
   return invoke("generate_plan", { projectId, prompt, complexity });
+}
+
+export async function generatePlanChildren(
+  projectId: string,
+  parentId: string,
+  prompt: string,
+  complexity?: "linear" | "branching",
+): Promise<DecisionNode[]> {
+  return invoke("generate_plan_children", { projectId, parentId, prompt, complexity });
 }

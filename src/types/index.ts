@@ -140,7 +140,7 @@ export interface MergeResult {
 
 // ─── React Flow Node Data ──────────────────────────────────────
 
-import type { VisualNodeType } from "./node-types";
+import type { StructuralNodeType, VisualNodeType } from "./node-types";
 
 export interface DecisionNodeData {
   [key: string]: unknown;
@@ -152,7 +152,7 @@ export interface DecisionNodeData {
   flowMode: "linear" | "branching";
   onRunNode: (nodeId: string) => void;
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
-  onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
+  onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
   onDeleteNode: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
   isOrchestratorTarget?: boolean;
@@ -212,7 +212,8 @@ export type ModalType =
   | { kind: "create_project" }
   | { kind: "edit_project"; project: Project }
   | { kind: "fork_node"; nodeId: string }
-  | { kind: "create_structural_node"; parentId: string | null; nodeType: "task" | "decision" | "agent" | "merge" | "final" }
+  | { kind: "create_structural_node"; parentId: string | null; nodeType: StructuralNodeType }
+  | { kind: "expand_plan"; parentId: string }
   | { kind: "delete_project"; project: Project }
   | { kind: "delete_node"; node: DecisionNode }
   | { kind: "create_session" }

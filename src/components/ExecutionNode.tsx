@@ -6,10 +6,7 @@ import {
   CheckCircle2,
   XCircle,
   Pause,
-  Plus,
   GitMerge as MergeIcon,
-  GitFork,
-  Trophy,
   X,
   RotateCcw,
   SquareTerminal,
@@ -69,11 +66,9 @@ function ExecutionNodeInner({
     visualType,
     onFork: _onFork,
     onMerge,
-    onCreateStructuralNode,
     onRunNode,
     onDeleteNode,
     onOpenNodeTerminal,
-    flowMode,
     isOrchestratorTarget,
     debugMode,
     onResetNode,
@@ -99,9 +94,7 @@ function ExecutionNodeInner({
         : null;
 
   // Context-sensitive action rules per node type
-  const isTerminal = node.status === "completed" || node.status === "failed" || node.status === "paused";
   const isPending = node.status === "pending";
-  const canAddChildren = isTerminal || isPending;
   const actions: { label: string; icon: React.ElementType; tone: string; onClick: () => void }[] = [];
 
   // Run button for any pending node (not yet executed)
@@ -114,57 +107,12 @@ function ExecutionNodeInner({
     });
   }
 
-  if (visualType === "task" && canAddChildren) {
-    if (flowMode !== "linear") {
-      actions.push({
-        label: "Add decision",
-        icon: GitFork,
-        tone: "border-amber-400/30 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 hover:border-amber-400/50",
-        onClick: () => onCreateStructuralNode(node.id, "decision"),
-      });
-    }
+  if (visualType === "agent" && node.status === "completed") {
     actions.push({
-      label: "Add agent",
-      icon: Plus,
-      tone: "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400/50",
-      onClick: () => onCreateStructuralNode(node.id, "agent"),
-    });
-  } else if (visualType === "decision") {
-    actions.push({
-      label: "Add agent",
-      icon: Plus,
-      tone: "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400/50",
-      onClick: () => onCreateStructuralNode(node.id, "agent"),
-    });
-  } else if (visualType === "agent" && canAddChildren) {
-    actions.push({
-      label: "Add agent",
-      icon: Plus,
-      tone: "border-sky-400/30 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 hover:border-sky-400/50",
-      onClick: () => onCreateStructuralNode(node.id, "agent"),
-    });
-    if (flowMode !== "linear") {
-      actions.push({
-        label: "Add review",
-        icon: MergeIcon,
-        tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
-        onClick: () => onCreateStructuralNode(node.id, "merge"),
-      });
-    }
-    if (node.status === "completed") {
-      actions.push({
-        label: "Merge",
-        icon: MergeIcon,
-        tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
-        onClick: () => onMerge(node.id),
-      });
-    }
-  } else if (visualType === "merge" && canAddChildren) {
-    actions.push({
-      label: "Add final",
-      icon: Trophy,
-      tone: "border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 hover:border-emerald-400/50",
-      onClick: () => onCreateStructuralNode(node.id, "final"),
+      label: "Merge",
+      icon: MergeIcon,
+      tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
+      onClick: () => onMerge(node.id),
     });
   }
   // Debug mode: Reset button for non-pending nodes

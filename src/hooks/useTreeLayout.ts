@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import dagre from "@dagrejs/dagre";
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
 import type { DecisionNode, DecisionNodeData } from "../types";
+import type { StructuralNodeType } from "../types/node-types";
 import { inferNodeType, inferEdgeVariant } from "../lib/node-type-inference";
 
 const NODE_WIDTH = 260;
@@ -13,7 +14,7 @@ interface UseTreeLayoutInput {
   ancestryPath: Set<string>;
   onFork: (nodeId: string) => void;
   onMerge: (nodeId: string) => void;
-  onCreateStructuralNode: (parentId: string | null, nodeType: "task" | "decision" | "agent" | "merge" | "final") => void;
+  onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;

@@ -550,13 +550,61 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode
     nodes
 }
 
+pub fn plan_children_to_nodes(
+    plan: &GeneratedPlan,
+    project_id: &str,
+    parent_id: &str,
+) -> Vec<DecisionNode> {
+    let mut nodes = Vec::new();
+    let now = db::now_unix();
+
+    fn visit(
+        plan_node: &PlanNode,
+        project_id: &str,
+        parent_id: Option<String>,
+        now: i64,
+        nodes: &mut Vec<DecisionNode>,
+    ) {
+        let id = uuid::Uuid::new_v4().to_string();
+        let branch_name = format!("structural/{}/{}", plan_node.node_type, id);
+
+        nodes.push(DecisionNode {
+            id: id.clone(),
+            project_id: project_id.to_string(),
+            parent_id,
+            label: plan_node.label.clone(),
+            prompt: plan_node.prompt.clone(),
+            branch_name,
+            worktree_path: None,
+            commit_hash: None,
+            status: NodeStatus::Pending,
+            exit_code: None,
+            node_type: Some(plan_node.node_type.clone()),
+            scheduled_at: None,
+            started_at: None,
+            created_at: now,
+            updated_at: now,
+        });
+
+        for child in &plan_node.children {
+            visit(child, project_id, Some(id.clone()), now, nodes);
+        }
+    }
+
+    for child in &plan.root.children {
+        visit(child, project_id, Some(parent_id.to_string()), now, &mut nodes);
+    }
+
+    nodes
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
     use super::{
         build_planner_invocation, cleanup_output_file, normalize_plan_for_complexity,
-        GeneratedPlan, PlanNode,
+        plan_children_to_nodes, GeneratedPlan, PlanNode,
     };
     use crate::models::AgentType;
 
@@ -718,6 +766,36 @@ mod tests {
         assert_eq!(normalized.root.children.len(), 2);
         assert_eq!(normalized.root.children[0].label, "Branch A");
         assert_eq!(normalized.root.children[1].label, "Branch B");
+    }
+
+    #[test]
+    fn plan_children_to_nodes_attaches_generated_children_to_parent() {
+        let plan = GeneratedPlan {
+            root: PlanNode {
+                label: "Generated root".to_string(),
+                prompt: "Root prompt".to_string(),
+                node_type: "task".to_string(),
+                children: vec![PlanNode {
+                    label: "Generated child".to_string(),
+                    prompt: "Child prompt".to_string(),
+                    node_type: "agent".to_string(),
+                    children: vec![PlanNode {
+                        label: "Generated grandchild".to_string(),
+                        prompt: "Grandchild prompt".to_string(),
+                        node_type: "agent".to_string(),
+                        children: vec![],
+                    }],
+                }],
+            },
+        };
+
+        let nodes = plan_children_to_nodes(&plan, "project-1", "parent-1");
+
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].label, "Generated child");
+        assert_eq!(nodes[0].parent_id.as_deref(), Some("parent-1"));
+        assert_eq!(nodes[1].label, "Generated grandchild");
+        assert_eq!(nodes[1].parent_id.as_deref(), Some(nodes[0].id.as_str()));
     }
 
     #[test]
