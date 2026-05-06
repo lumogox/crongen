@@ -606,9 +606,10 @@ async fn run_single_node(
 
     if node.node_type.as_deref() == Some("validation") {
         let repo_for_plan = project.repo_path.clone();
-        let plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_for_plan))
-            .await
-            .map_err(|e| format!("Task: {e}"))??;
+        let plan =
+            tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_for_plan))
+                .await
+                .map_err(|e| format!("Task: {e}"))??;
 
         let branch_name = {
             let repo_for_branch = project.repo_path.clone();
@@ -659,7 +660,11 @@ async fn run_single_node(
         )
         .map_err(|e| format!("PTY spawn: {e}"))?;
 
-        log::info!("Orchestrator spawned validation node: {} ({})", node.label, nid);
+        log::info!(
+            "Orchestrator spawned validation node: {} ({})",
+            node.label,
+            nid
+        );
         return Ok(());
     }
 
@@ -754,19 +759,22 @@ async fn run_single_node(
     };
 
     // Load execution model from settings
-    let exec_model = crate::commands::get_settings()
-        .await
-        .ok()
-        .and_then(|s| s.execution_model);
+    let settings = crate::commands::get_settings().await.ok();
+    let effective_config = crate::commands::resolve_effective_agent_config(
+        &project.agent_type,
+        &project.type_config,
+        settings.as_ref(),
+    );
+    let exec_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
 
     // Build execution command
     let execution = agent_templates::build_shell_command(
         &project.agent_type,
         &node.prompt,
-        &project.type_config,
+        &effective_config,
         Some(&toon_context),
         node.node_type.as_deref(),
-        exec_model.as_deref(),
+        exec_model,
     );
 
     pty.clear_session_artifacts(&nid);

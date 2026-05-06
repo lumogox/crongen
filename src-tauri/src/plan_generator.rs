@@ -220,6 +220,7 @@ fn build_planner_invocation(
     provider: &AgentType,
     full_prompt: &str,
     model: Option<&str>,
+    extra_args: &[String],
     repo_path: &str,
 ) -> Result<PlannerInvocation, String> {
     match provider {
@@ -235,6 +236,7 @@ fn build_planner_invocation(
                 args.push("--model".to_string());
                 args.push(m.to_string());
             }
+            append_extra_args(&mut args, extra_args);
 
             Ok(PlannerInvocation {
                 program: "claude".to_string(),
@@ -269,6 +271,7 @@ fn build_planner_invocation(
                     args.push("model_reasoning_effort=\"medium\"".to_string());
                 }
             }
+            append_extra_args(&mut args, extra_args);
             args.push(full_prompt.to_string());
 
             Ok(PlannerInvocation {
@@ -289,6 +292,7 @@ fn build_planner_invocation(
                 args.push("--model".to_string());
                 args.push(m.to_string());
             }
+            append_extra_args(&mut args, extra_args);
             args.push("--prompt".to_string());
             args.push(full_prompt.to_string());
 
@@ -302,6 +306,16 @@ fn build_planner_invocation(
         }
         AgentType::Custom => Err("Custom providers are not supported for planning.".to_string()),
     }
+}
+
+fn append_extra_args(args: &mut Vec<String>, extra_args: &[String]) {
+    args.extend(
+        extra_args
+            .iter()
+            .map(|arg| arg.trim())
+            .filter(|arg| !arg.is_empty())
+            .map(ToString::to_string),
+    );
 }
 
 // ─── Key Normalization ──────────────────────────────────────────
@@ -369,12 +383,14 @@ pub async fn generate_plan(
     prompt: &str,
     project_mode: &str,
     model: Option<&str>,
+    extra_args: &[String],
     complexity: &str,
     repo_path: &str,
 ) -> Result<GeneratedPlan, String> {
     let system_prompt = planner_system_prompt(project_mode, complexity);
     let full_prompt = format!("{system_prompt}\n\nUser task: {prompt}");
-    let invocation = build_planner_invocation(provider, &full_prompt, model, repo_path)?;
+    let invocation =
+        build_planner_invocation(provider, &full_prompt, model, extra_args, repo_path)?;
 
     let output = Command::new(&invocation.program)
         .args(&invocation.args)
@@ -539,8 +555,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        build_planner_invocation, cleanup_output_file, normalize_plan_for_complexity, GeneratedPlan,
-        PlanNode,
+        build_planner_invocation, cleanup_output_file, normalize_plan_for_complexity,
+        GeneratedPlan, PlanNode,
     };
     use crate::models::AgentType;
 
@@ -550,6 +566,7 @@ mod tests {
             &AgentType::ClaudeCode,
             "Plan this task",
             Some("sonnet"),
+            &[],
             "/tmp",
         )
         .expect("claude invocation");
@@ -561,9 +578,14 @@ mod tests {
 
     #[test]
     fn planner_dispatch_builds_codex_invocation() {
-        let invocation =
-            build_planner_invocation(&AgentType::Codex, "Plan this task", Some("gpt-5"), "/tmp")
-                .expect("codex invocation");
+        let invocation = build_planner_invocation(
+            &AgentType::Codex,
+            "Plan this task",
+            Some("gpt-5"),
+            &[],
+            "/tmp",
+        )
+        .expect("codex invocation");
 
         assert_eq!(invocation.program, "codex");
         assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
@@ -571,10 +593,7 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--output-last-message"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "--output-schema"));
+        assert!(invocation.args.iter().any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
@@ -586,6 +605,7 @@ mod tests {
             &AgentType::Codex,
             "Plan this task",
             Some("gpt-5-codex-mini"),
+            &[],
             "/tmp",
         )
         .expect("codex invocation");
@@ -605,6 +625,7 @@ mod tests {
             &AgentType::Gemini,
             "Plan this task",
             Some("gemini-3-pro"),
+            &["--include-directories".to_string(), "../shared".to_string()],
             "/tmp",
         )
         .expect("gemini invocation");
@@ -615,6 +636,10 @@ mod tests {
             .args
             .windows(2)
             .any(|pair| pair == ["--approval-mode", "plan"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
         assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
         assert!(invocation.args.iter().any(|arg| arg == "json"));
         assert!(invocation.output_file.is_none());

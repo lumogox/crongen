@@ -5,6 +5,7 @@ import type {
   CodexConfig,
   GeminiConfig,
   CustomConfig,
+  AgentCliConfigs,
 } from "../types";
 
 // ─── Template Metadata ─────────────────────────────────────────
@@ -35,6 +36,7 @@ export const CLAUDE_CODE_TEMPLATE: AgentTypeTemplate = {
   defaultConfig: {
     type: "claude_code",
     model: null,
+    extra_args: [],
     max_turns: null,
     max_budget_usd: null,
     allowed_tools: null,
@@ -65,6 +67,7 @@ export const CLAUDE_CODE_TEMPLATE: AgentTypeTemplate = {
         .forEach((t) => parts.push("--disallowedTools", t));
     if (cfg.append_system_prompt)
       parts.push("--append-system-prompt", JSON.stringify(cfg.append_system_prompt));
+    if (cfg.extra_args?.length) parts.push(...cfg.extra_args);
     return parts.join(" ");
   },
 };
@@ -78,6 +81,7 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
   defaultConfig: {
     type: "codex",
     model: FAST_CODEX_MODEL,
+    extra_args: [],
     sandbox: null,
     approval_mode: null,
     skip_git_check: false,
@@ -90,6 +94,7 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
     const sandbox = codexSandboxPreviewValue(cfg);
     if (sandbox) parts.push("--sandbox", sandbox);
     if (cfg.skip_git_check) parts.push("--skip-git-repo-check");
+    if (cfg.extra_args?.length) parts.push(...cfg.extra_args);
     parts.push("-");
     return `printf %s ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
   },
@@ -104,6 +109,7 @@ export const GEMINI_TEMPLATE: AgentTypeTemplate = {
   defaultConfig: {
     type: "gemini",
     model: null,
+    extra_args: [],
     sandbox: null,
     yolo: true,
   } satisfies GeminiConfig,
@@ -114,7 +120,9 @@ export const GEMINI_TEMPLATE: AgentTypeTemplate = {
     if (cfg.model) parts.push("--model", cfg.model);
     if (cfg.sandbox && cfg.sandbox !== "false" && cfg.sandbox !== "0")
       parts.push("--sandbox");
-    parts.push("--output-format", "stream-json", "--prompt", JSON.stringify(""));
+    parts.push("--output-format", "stream-json");
+    if (cfg.extra_args?.length) parts.push(...cfg.extra_args);
+    parts.push("--prompt", JSON.stringify(""));
     return `printf %s ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
   },
 };
@@ -147,6 +155,14 @@ export const AGENT_TEMPLATES: Record<AgentType, AgentTypeTemplate> = {
 };
 
 export const BUILT_IN_AGENT_TYPES: AgentType[] = ["claude_code", "codex", "gemini"];
+
+export function createDefaultAgentConfigs(): AgentCliConfigs {
+  return {
+    claude_code: structuredClone(CLAUDE_CODE_TEMPLATE.defaultConfig) as ClaudeCodeConfig,
+    codex: structuredClone(CODEX_TEMPLATE.defaultConfig) as CodexConfig,
+    gemini: structuredClone(GEMINI_TEMPLATE.defaultConfig) as GeminiConfig,
+  };
+}
 
 export function getAgentLabel(agentType: AgentType | null | undefined): string {
   if (!agentType) return "Unconfigured";

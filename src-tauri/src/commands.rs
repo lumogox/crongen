@@ -15,8 +15,8 @@ use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
     CodexModelCatalog, CodexModelOption, CodexReasoningLevel, DecisionNode, ExecutionMode,
-    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode,
-    OrchestratorStatus, Project,
+    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode, OrchestratorStatus,
+    Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -382,16 +382,54 @@ async fn ensure_provider_ready(agent_type: &AgentType, role: &str) -> Result<(),
     Err(readiness_message(role, agent_type, &readiness))
 }
 
-fn resolve_project_execution_model(
-    project: &Project,
+pub(crate) fn settings_agent_config(
+    agent_type: &AgentType,
     settings: Option<&AppSettings>,
-) -> Option<String> {
-    let default_model = settings.and_then(|entry| entry.execution_model.clone());
-    match &project.type_config {
-        AgentTypeConfig::ClaudeCode(cfg) => cfg.model.clone().or(default_model),
-        AgentTypeConfig::Codex(cfg) => cfg.model.clone().or(default_model),
-        AgentTypeConfig::Gemini(cfg) => cfg.model.clone().or(default_model),
-        AgentTypeConfig::Custom(_) => default_model,
+) -> Option<AgentTypeConfig> {
+    let settings = settings?;
+    match agent_type {
+        AgentType::ClaudeCode => settings
+            .agent_configs
+            .claude_code
+            .clone()
+            .map(AgentTypeConfig::ClaudeCode),
+        AgentType::Codex => settings
+            .agent_configs
+            .codex
+            .clone()
+            .map(AgentTypeConfig::Codex),
+        AgentType::Gemini => settings
+            .agent_configs
+            .gemini
+            .clone()
+            .map(AgentTypeConfig::Gemini),
+        AgentType::Custom => None,
+    }
+}
+
+pub(crate) fn resolve_effective_agent_config(
+    agent_type: &AgentType,
+    project_config: &AgentTypeConfig,
+    settings: Option<&AppSettings>,
+) -> AgentTypeConfig {
+    settings_agent_config(agent_type, settings).unwrap_or_else(|| project_config.clone())
+}
+
+fn agent_config_model(config: &AgentTypeConfig) -> Option<String> {
+    match config {
+        AgentTypeConfig::ClaudeCode(cfg) => cfg.model.clone(),
+        AgentTypeConfig::Codex(cfg) => cfg.model.clone(),
+        AgentTypeConfig::Gemini(cfg) => cfg.model.clone(),
+        AgentTypeConfig::Custom(_) => None,
+    }
+}
+
+fn agent_config_extra_args(config: &AgentTypeConfig) -> &[String] {
+    match config {
+        AgentTypeConfig::ClaudeCode(cfg) => &cfg.extra_args,
+        AgentTypeConfig::Codex(cfg) => &cfg.extra_args,
+        AgentTypeConfig::Gemini(cfg) => &cfg.extra_args,
+        AgentTypeConfig::Custom(_) => &[],
     }
 }
 
@@ -406,6 +444,7 @@ fn build_merge_resolution_invocation(
     repo_path: &str,
     prompt: &str,
     model: Option<&str>,
+    extra_args: &[String],
 ) -> Result<ResolutionInvocation, String> {
     match agent_type {
         AgentType::ClaudeCode => {
@@ -420,6 +459,7 @@ fn build_merge_resolution_invocation(
                 args.push("--model".to_string());
                 args.push(value.to_string());
             }
+            append_extra_args(&mut args, extra_args);
 
             Ok(ResolutionInvocation {
                 program: "claude".to_string(),
@@ -446,14 +486,12 @@ fn build_merge_resolution_invocation(
                 args.push("--model".to_string());
                 args.push(value.to_string());
 
-                if matches!(
-                    value,
-                    "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
-                ) {
+                if matches!(value, "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3") {
                     args.push("-c".to_string());
                     args.push("model_reasoning_effort=\"medium\"".to_string());
                 }
             }
+            append_extra_args(&mut args, extra_args);
             args.push(prompt.to_string());
 
             Ok(ResolutionInvocation {
@@ -472,6 +510,7 @@ fn build_merge_resolution_invocation(
                 args.push("--model".to_string());
                 args.push(value.to_string());
             }
+            append_extra_args(&mut args, extra_args);
             args.push("--prompt".to_string());
             args.push(prompt.to_string());
 
@@ -485,6 +524,16 @@ fn build_merge_resolution_invocation(
             Err("Custom shells do not support automatic merge conflict resolution.".to_string())
         }
     }
+}
+
+fn append_extra_args(args: &mut Vec<String>, extra_args: &[String]) {
+    args.extend(
+        extra_args
+            .iter()
+            .map(|arg| arg.trim())
+            .filter(|arg| !arg.is_empty())
+            .map(ToString::to_string),
+    );
 }
 
 fn resolve_planning_agent(settings: &AppSettings) -> Result<AgentType, String> {
@@ -752,7 +801,9 @@ async fn persist_node_runtime_fields(
     let commit_hash = node.commit_hash.clone();
     let prompt = node.prompt.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = db_handle.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let conn = db_handle
+            .lock()
+            .map_err(|e| format!("DB lock error: {e}"))?;
         conn.execute(
             "UPDATE decision_nodes
              SET prompt=?1, branch_name=?2, worktree_path=?3, commit_hash=?4, updated_at=?5
@@ -799,21 +850,24 @@ async fn create_post_merge_validation_node(
     }
 
     let repo_path = project.repo_path.clone();
-    let validation_plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_path))
-        .await
-        .map_err(|e| format!("Task error: {e}"))?;
+    let validation_plan =
+        tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_path))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?;
 
     let repo_for_branch = project.repo_path.clone();
-    let branch_name = tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
-        .await
-        .map_err(|e| format!("Task error: {e}"))?
-        .unwrap_or_else(|_| "main".to_string());
+    let branch_name =
+        tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?
+            .unwrap_or_else(|_| "main".to_string());
 
     let repo_for_commit = project.repo_path.clone();
-    let commit_hash = tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
-        .await
-        .map_err(|e| format!("Task error: {e}"))?
-        .ok();
+    let commit_hash =
+        tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?
+            .ok();
 
     let now = db::now_unix();
     let mut node = DecisionNode {
@@ -874,16 +928,18 @@ async fn run_validation_node_with_plan(
     plan: validation::ValidationPlan,
 ) -> Result<DecisionNode, String> {
     let repo_for_branch = project.repo_path.clone();
-    node.branch_name = tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
-        .await
-        .map_err(|e| format!("Task error: {e}"))?
-        .unwrap_or_else(|_| "main".to_string());
+    node.branch_name =
+        tokio::task::spawn_blocking(move || git_manager::get_default_branch(&repo_for_branch))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?
+            .unwrap_or_else(|_| "main".to_string());
 
     let repo_for_commit = project.repo_path.clone();
-    node.commit_hash = tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
-        .await
-        .map_err(|e| format!("Task error: {e}"))?
-        .ok();
+    node.commit_hash =
+        tokio::task::spawn_blocking(move || git_manager::get_current_commit(&repo_for_commit))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?
+            .ok();
     node.worktree_path = None;
     node.prompt = plan.prompt;
 
@@ -1003,14 +1059,20 @@ pub async fn run_project_now(
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 7. Build execution mode and spawn appropriate session (no context for root)
-    let exec_model = get_settings().await.ok().and_then(|s| s.execution_model);
+    let settings = get_settings().await.ok();
+    let effective_config = resolve_effective_agent_config(
+        &project.agent_type,
+        &project.type_config,
+        settings.as_ref(),
+    );
+    let exec_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
     let execution = agent_templates::build_shell_command(
         &project.agent_type,
         &project.prompt,
-        &project.type_config,
+        &effective_config,
         None,
         node.node_type.as_deref(),
-        exec_model.as_deref(),
+        exec_model,
     );
 
     match execution {
@@ -1327,14 +1389,23 @@ pub async fn merge_node_branch(
         let repo_for_resolve = project.repo_path.clone();
         let conflicts = result.conflict_files.clone();
         let resolution_settings = get_settings().await.ok();
-        let resolution_model =
-            resolve_project_execution_model(&project, resolution_settings.as_ref());
+        let resolution_config = resolve_effective_agent_config(
+            &project.agent_type,
+            &project.type_config,
+            resolution_settings.as_ref(),
+        );
+        let resolution_model = agent_config_model(&resolution_config).or_else(|| {
+            resolution_settings
+                .as_ref()
+                .and_then(|settings| settings.execution_model.clone())
+        });
 
         let resolution = resolve_merge_conflicts(
             &project.agent_type,
             &repo_for_resolve,
             &conflicts,
             resolution_model.as_deref(),
+            agent_config_extra_args(&resolution_config),
         )
         .await;
 
@@ -1412,7 +1483,8 @@ pub async fn merge_node_branch(
 
         log::info!("Merged node {} branch {}", node.id, node.branch_name);
 
-        if let Err(err) = create_post_merge_validation_node(state.inner(), &app, &node, &project).await
+        if let Err(err) =
+            create_post_merge_validation_node(state.inner(), &app, &node, &project).await
         {
             log::warn!(
                 "Merged node {} but failed to create post-merge validation: {}",
@@ -1582,9 +1654,11 @@ pub async fn run_node(
         ensure_provider_ready(&project.agent_type, "execution").await?;
     } else {
         let repo_for_validation = project.repo_path.clone();
-        let plan = tokio::task::spawn_blocking(move || validation::build_validation_plan(&repo_for_validation))
-            .await
-            .map_err(|e| format!("Task error: {e}"))??;
+        let plan = tokio::task::spawn_blocking(move || {
+            validation::build_validation_plan(&repo_for_validation)
+        })
+        .await
+        .map_err(|e| format!("Task error: {e}"))??;
         return run_validation_node_with_plan(state.inner(), &app, &project, node, plan).await;
     }
 
@@ -1673,14 +1747,20 @@ pub async fn run_node(
     };
 
     // 9. Build execution and spawn session with TOON context
-    let exec_model2 = get_settings().await.ok().and_then(|s| s.execution_model);
+    let settings = get_settings().await.ok();
+    let effective_config = resolve_effective_agent_config(
+        &project.agent_type,
+        &project.type_config,
+        settings.as_ref(),
+    );
+    let exec_model2 = settings.as_ref().and_then(|s| s.execution_model.as_deref());
     let execution = agent_templates::build_shell_command(
         &project.agent_type,
         &node.prompt,
-        &project.type_config,
+        &effective_config,
         Some(&toon_context),
         node.node_type.as_deref(),
-        exec_model2.as_deref(),
+        exec_model2,
     );
 
     state.pty.clear_session_artifacts(&node.id);
@@ -1863,20 +1943,22 @@ pub async fn open_node_terminal(
 
     let cwd = resolve_node_terminal_cwd(&node, &project);
     let session_id = manual_terminal_session_id(&node.id);
-    let execution_model = get_settings().await.ok().and_then(|s| s.execution_model);
-    let effective_model = match &project.type_config {
-        AgentTypeConfig::ClaudeCode(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
-        AgentTypeConfig::Codex(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
-        AgentTypeConfig::Gemini(cfg) => cfg.model.clone().or_else(|| execution_model.clone()),
-        AgentTypeConfig::Custom(_) => None,
-    };
+    let settings = get_settings().await.ok();
+    let effective_config = resolve_effective_agent_config(
+        &project.agent_type,
+        &project.type_config,
+        settings.as_ref(),
+    );
+    let execution_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
+    let effective_model =
+        agent_config_model(&effective_config).or_else(|| execution_model.map(ToString::to_string));
 
     if !state.pty.has_session(&session_id) {
         state.pty.clear_session_artifacts(&session_id);
         let shell = agent_templates::build_interactive_terminal_command(
             &project.agent_type,
-            &project.type_config,
-            execution_model.as_deref(),
+            &effective_config,
+            execution_model,
         );
         state
             .pty
@@ -2105,6 +2187,7 @@ async fn resolve_merge_conflicts(
     repo_path: &str,
     conflict_files: &[String],
     model: Option<&str>,
+    extra_args: &[String],
 ) -> Result<String, String> {
     let file_list = conflict_files.join(", ");
     let prompt = format!(
@@ -2119,7 +2202,8 @@ async fn resolve_merge_conflicts(
          Do NOT run git add or git commit — just fix the files."
     );
 
-    let invocation = build_merge_resolution_invocation(agent_type, repo_path, &prompt, model)?;
+    let invocation =
+        build_merge_resolution_invocation(agent_type, repo_path, &prompt, model, extra_args)?;
     let output = tokio::process::Command::new(&invocation.program)
         .args(&invocation.args)
         .current_dir(repo_path)
@@ -2391,11 +2475,21 @@ pub async fn generate_plan(
 
     // Generate the plan via the selected planning provider
     let complexity_str = complexity.as_deref().unwrap_or("branching");
+    let planning_config = settings_agent_config(&planning_agent, Some(&settings));
+    let planning_model = planning_config
+        .as_ref()
+        .and_then(agent_config_model)
+        .or_else(|| settings.planning_model.clone());
+    let planning_extra_args = planning_config
+        .as_ref()
+        .map(agent_config_extra_args)
+        .unwrap_or(&[]);
     let plan = plan_generator::generate_plan(
         &planning_agent,
         &prompt,
         &project_mode,
-        settings.planning_model.as_deref(),
+        planning_model.as_deref(),
+        planning_extra_args,
         complexity_str,
         &repo_path,
     )
@@ -2535,6 +2629,7 @@ mod tests {
             "/tmp",
             "Resolve the merge",
             Some("gpt-5"),
+            &[],
         )
         .expect("codex invocation");
 
@@ -2553,6 +2648,7 @@ mod tests {
             "/tmp",
             "Resolve the merge",
             Some("gpt-5-codex-mini"),
+            &[],
         )
         .expect("codex invocation");
 
@@ -2570,6 +2666,7 @@ mod tests {
             "/tmp",
             "Resolve the merge",
             Some("gemini-2.5-pro"),
+            &["--include-directories".to_string(), "../shared".to_string()],
         )
         .expect("gemini invocation");
 
@@ -2584,6 +2681,10 @@ mod tests {
             .args
             .windows(2)
             .any(|pair| pair == ["--model", "gemini-2.5-pro"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
         assert!(invocation
             .args
             .windows(2)

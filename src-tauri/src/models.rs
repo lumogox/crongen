@@ -112,6 +112,8 @@ pub enum AgentTypeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClaudeCodeConfig {
     pub model: Option<String>,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
     pub max_turns: Option<u32>,
     pub max_budget_usd: Option<f64>,
     pub allowed_tools: Option<String>,
@@ -124,7 +126,9 @@ pub struct ClaudeCodeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CodexConfig {
     pub model: Option<String>,
-    pub sandbox: Option<String>,       // "read-only", "workspace-write", "danger-full-access"
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+    pub sandbox: Option<String>, // "read-only", "workspace-write", "danger-full-access"
     pub approval_mode: Option<String>, // legacy UI mode; "full-auto" maps to workspace-write
     pub skip_git_check: bool,
     pub json_output: bool,
@@ -133,6 +137,8 @@ pub struct CodexConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GeminiConfig {
     pub model: Option<String>,
+    #[serde(default)]
+    pub extra_args: Vec<String>,
     pub sandbox: Option<String>,
     #[serde(default = "default_true")]
     pub yolo: bool,
@@ -359,6 +365,18 @@ pub struct AppSettings {
     pub planning_model: Option<String>,
     #[serde(default)]
     pub execution_model: Option<String>,
+    #[serde(default)]
+    pub agent_configs: AgentCliConfigs,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentCliConfigs {
+    #[serde(default)]
+    pub claude_code: Option<ClaudeCodeConfig>,
+    #[serde(default)]
+    pub codex: Option<CodexConfig>,
+    #[serde(default)]
+    pub gemini: Option<GeminiConfig>,
 }
 
 impl Default for AppSettings {
@@ -370,6 +388,7 @@ impl Default for AppSettings {
             execution_agent: None,
             planning_model: None,
             execution_model: None,
+            agent_configs: AgentCliConfigs::default(),
         }
     }
 }

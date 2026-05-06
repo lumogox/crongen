@@ -46,7 +46,7 @@ import {
   validateNodeRuntime,
   getRepoBranch,
 } from "./lib/tauri-commands";
-import { getAgentLabel } from "./lib/agent-templates";
+import { createDefaultAgentConfigs, getAgentLabel } from "./lib/agent-templates";
 import { ContentArea } from "./components/ContentArea";
 import { ProjectModal } from "./components/ProjectModal";
 import { DeleteConfirm } from "./components/DeleteConfirm";
@@ -65,6 +65,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   execution_agent: null,
   planning_model: null,
   execution_model: null,
+  agent_configs: createDefaultAgentConfigs(),
 };
 
 function App() {

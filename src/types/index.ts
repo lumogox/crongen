@@ -7,6 +7,7 @@ export type AgentProviderStatus = "ready" | "missing_cli" | "needs_login" | "com
 export interface ClaudeCodeConfig {
   type: "claude_code";
   model?: string | null;
+  extra_args: string[];
   max_turns?: number | null;
   max_budget_usd?: number | null;
   allowed_tools?: string | null;
@@ -18,6 +19,7 @@ export interface ClaudeCodeConfig {
 export interface CodexConfig {
   type: "codex";
   model?: string | null;
+  extra_args: string[];
   sandbox?: string | null;
   approval_mode?: string | null;
   skip_git_check: boolean;
@@ -27,6 +29,7 @@ export interface CodexConfig {
 export interface GeminiConfig {
   type: "gemini";
   model?: string | null;
+  extra_args: string[];
   sandbox?: string | null;
   yolo: boolean;
 }
@@ -194,6 +197,13 @@ export interface AppSettings {
   execution_agent?: AgentType | null;
   planning_model?: string | null;
   execution_model?: string | null;
+  agent_configs?: AgentCliConfigs;
+}
+
+export interface AgentCliConfigs {
+  claude_code?: ClaudeCodeConfig | null;
+  codex?: CodexConfig | null;
+  gemini?: GeminiConfig | null;
 }
 
 // ─── App State ─────────────────────────────────────────────────

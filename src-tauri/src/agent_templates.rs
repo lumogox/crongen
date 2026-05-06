@@ -148,6 +148,8 @@ fn build_claude_code_command(
         args.push(sys_prompt.clone());
     }
 
+    append_extra_args(&mut args, &cfg.extra_args);
+
     ExecutionMode::Sdk(SdkExecution {
         program: "claude".to_string(),
         args,
@@ -195,6 +197,8 @@ fn build_claude_interactive_command(
         args.push(sys_prompt.clone());
     }
 
+    append_extra_args(&mut args, &cfg.extra_args);
+
     ShellExecution {
         program: "claude".to_string(),
         args,
@@ -218,10 +222,7 @@ fn build_codex_exec_command(
         args.push("--model".to_string());
         args.push(model.to_string());
 
-        if matches!(
-            model,
-            "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
-        ) {
+        if matches!(model, "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3") {
             args.push("-c".to_string());
             args.push("model_reasoning_effort=\"medium\"".to_string());
         }
@@ -239,6 +240,8 @@ fn build_codex_exec_command(
     if cfg.json_output {
         // Already enforced above; keep config field harmlessly compatible.
     }
+
+    append_extra_args(&mut args, &cfg.extra_args);
 
     // Read the full prompt from stdin to avoid shell/TTY timing issues and to
     // keep large execution-context payloads off the argv boundary.
@@ -261,10 +264,7 @@ fn build_codex_interactive_command(
         args.push("--model".to_string());
         args.push(model.to_string());
 
-        if matches!(
-            model,
-            "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3"
-        ) {
+        if matches!(model, "gpt-5-codex-mini" | "codex-1p-mini-q-20251105-ev3") {
             args.push("-c".to_string());
             args.push("model_reasoning_effort=\"medium\"".to_string());
         }
@@ -278,6 +278,8 @@ fn build_codex_interactive_command(
     if cfg.skip_git_check {
         args.push("--skip-git-repo-check".to_string());
     }
+
+    append_extra_args(&mut args, &cfg.extra_args);
 
     ShellExecution {
         program: "codex".to_string(),
@@ -327,6 +329,7 @@ fn build_gemini_headless_command(
 
     args.push("--output-format".to_string());
     args.push("stream-json".to_string());
+    append_extra_args(&mut args, &cfg.extra_args);
     args.push("--prompt".to_string());
     args.push(String::new());
 
@@ -360,6 +363,8 @@ fn build_gemini_interactive_command(
         args.push("--sandbox".to_string());
     }
 
+    append_extra_args(&mut args, &cfg.extra_args);
+
     ShellExecution {
         program: "gemini".to_string(),
         args,
@@ -377,6 +382,16 @@ fn build_custom_command(prompt: &str, cfg: &crate::models::CustomConfig) -> Shel
         stdin_injection: Some(prompt.to_string()),
         auto_responses: vec![],
     }
+}
+
+fn append_extra_args(args: &mut Vec<String>, extra_args: &[String]) {
+    args.extend(
+        extra_args
+            .iter()
+            .map(|arg| arg.trim())
+            .filter(|arg| !arg.is_empty())
+            .map(ToString::to_string),
+    );
 }
 
 /// Returns the default executable name for an agent type.
@@ -401,6 +416,7 @@ mod tests {
             "Implement the feature",
             &AgentTypeConfig::Codex(CodexConfig {
                 model: Some("gpt-5.4".to_string()),
+                extra_args: vec![],
                 sandbox: Some("workspace-write".to_string()),
                 approval_mode: Some("full-auto".to_string()),
                 skip_git_check: true,
@@ -434,6 +450,7 @@ mod tests {
             "Review the branch",
             &AgentTypeConfig::Codex(CodexConfig {
                 model: None,
+                extra_args: vec![],
                 sandbox: None,
                 approval_mode: Some("full-auto".to_string()),
                 skip_git_check: false,
@@ -461,6 +478,7 @@ mod tests {
             "Review the branch",
             &AgentTypeConfig::Codex(CodexConfig {
                 model: None,
+                extra_args: vec![],
                 sandbox: None,
                 approval_mode: Some("suggest".to_string()),
                 skip_git_check: false,
@@ -487,6 +505,7 @@ mod tests {
             "Implement the feature",
             &AgentTypeConfig::Codex(CodexConfig {
                 model: Some("gpt-5-codex-mini".to_string()),
+                extra_args: vec![],
                 sandbox: None,
                 approval_mode: None,
                 skip_git_check: false,
@@ -510,11 +529,40 @@ mod tests {
     }
 
     #[test]
+    fn codex_exec_appends_extra_args_before_prompt_stdin_marker() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Implement the feature",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: None,
+                sandbox: None,
+                approval_mode: None,
+                skip_git_check: false,
+                json_output: false,
+                extra_args: vec!["--search".to_string()],
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+
+        assert!(sdk
+            .args
+            .ends_with(&["--search".to_string(), "-".to_string()]));
+    }
+
+    #[test]
     fn codex_interactive_clamps_reasoning_for_fast_model() {
         let shell = build_interactive_terminal_command(
             &AgentType::Codex,
             &AgentTypeConfig::Codex(CodexConfig {
                 model: Some("gpt-5-codex-mini".to_string()),
+                extra_args: vec![],
                 sandbox: Some("workspace-write".to_string()),
                 approval_mode: Some("full-auto".to_string()),
                 skip_git_check: true,
@@ -541,6 +589,7 @@ mod tests {
             "Implement the feature",
             &AgentTypeConfig::Gemini(GeminiConfig {
                 model: Some("gemini-3-pro".to_string()),
+                extra_args: vec!["--include-directories".to_string(), "../shared".to_string()],
                 sandbox: Some("true".to_string()),
                 yolo: true,
             }),
@@ -556,10 +605,17 @@ mod tests {
 
         assert_eq!(sdk.program, "gemini");
         assert!(sdk.args.iter().any(|arg| arg == "--prompt"));
-        assert_eq!(sdk.stdin_injection.as_deref(), Some("Implement the feature"));
+        assert_eq!(
+            sdk.stdin_injection.as_deref(),
+            Some("Implement the feature")
+        );
         assert!(sdk.args.iter().any(|arg| arg == "--output-format"));
         assert!(sdk.args.iter().any(|arg| arg == "stream-json"));
         assert!(sdk.args.iter().any(|arg| arg == "--yolo"));
         assert!(sdk.args.iter().any(|arg| arg == "--sandbox"));
+        assert!(sdk
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
     }
 }

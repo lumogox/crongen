@@ -4,9 +4,14 @@ import type {
   AgentRole,
   AgentType,
   AppSettings,
+  ClaudeCodeConfig,
+  CodexConfig,
+  GeminiConfig,
 } from "../types";
 import {
+  AGENT_TEMPLATES,
   BUILT_IN_AGENT_TYPES,
+  createDefaultAgentConfigs,
   getAgentLabel,
 } from "../lib/agent-templates";
 import {
@@ -17,10 +22,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Bot,
   Brain,
   CircleDashed,
+  Settings,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -126,6 +134,55 @@ function providerHelpText(status: AgentProviderReadiness | null) {
   return status.detail ?? statusLabel(status.status);
 }
 
+function normalizeExtraArgs(args: string[] | undefined): string[] {
+  return (args ?? []).map((arg) => arg.trim()).filter(Boolean);
+}
+
+function normalizeSettings(settings: AppSettings): AppSettings {
+  const defaults = createDefaultAgentConfigs();
+  return {
+    ...settings,
+    agent_configs: {
+      claude_code: {
+        ...(defaults.claude_code as ClaudeCodeConfig),
+        ...(settings.agent_configs?.claude_code ?? {}),
+        extra_args: normalizeExtraArgs(settings.agent_configs?.claude_code?.extra_args),
+      },
+      codex: {
+        ...(defaults.codex as CodexConfig),
+        ...(settings.agent_configs?.codex ?? {}),
+        extra_args: normalizeExtraArgs(settings.agent_configs?.codex?.extra_args),
+      },
+      gemini: {
+        ...(defaults.gemini as GeminiConfig),
+        ...(settings.agent_configs?.gemini ?? {}),
+        extra_args: normalizeExtraArgs(settings.agent_configs?.gemini?.extra_args),
+      },
+    },
+  };
+}
+
+function argsToText(args: string[] | undefined): string {
+  return (args ?? []).join("\n");
+}
+
+function textToArgs(value: string): string[] {
+  return value.split("\n").map((arg) => arg.trim()).filter(Boolean);
+}
+
+function configForProvider(settings: AppSettings, provider: AgentType) {
+  switch (provider) {
+    case "claude_code":
+      return settings.agent_configs?.claude_code ?? null;
+    case "codex":
+      return settings.agent_configs?.codex ?? null;
+    case "gemini":
+      return settings.agent_configs?.gemini ?? null;
+    case "custom":
+      return null;
+  }
+}
+
 function CurrentRoleCard({
   role,
   focus,
@@ -178,18 +235,22 @@ function ProviderRow({
   selectedForPlanning,
   selectedForExecution,
   isSaving,
+  configOpen,
   onUseBoth,
   onUsePlanning,
   onUseExecution,
+  onToggleConfig,
 }: {
   provider: AgentType;
   status: AgentProviderReadiness | null;
   selectedForPlanning: boolean;
   selectedForExecution: boolean;
   isSaving: boolean;
+  configOpen: boolean;
   onUseBoth: () => void;
   onUsePlanning: () => void;
   onUseExecution: () => void;
+  onToggleConfig: () => void;
 }) {
   const summary = PROVIDER_SUMMARIES[provider];
   const Icon = summary.icon;
@@ -239,6 +300,20 @@ function ProviderRow({
           <Button
             variant="outline"
             size="sm"
+            onClick={onToggleConfig}
+            disabled={isSaving}
+            className={
+              configOpen
+                ? "rounded-lg border-sky-300/50 bg-sky-500/15 text-sky-50 hover:bg-sky-500/20"
+                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10"
+            }
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Configure
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             disabled={!canPlan || isSaving}
             onClick={onUsePlanning}
             className={
@@ -270,6 +345,55 @@ function ProviderRow({
   );
 }
 
+function ProviderConfigPanel({
+  provider,
+  config,
+  onModelChange,
+  onArgsChange,
+}: {
+  provider: AgentType;
+  config: ClaudeCodeConfig | CodexConfig | GeminiConfig;
+  onModelChange: (value: string) => void;
+  onArgsChange: (value: string) => void;
+}) {
+  const commandPreview = AGENT_TEMPLATES[provider].buildCommandPreview(
+    "Run the selected task",
+    config,
+  );
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+        <label className="grid gap-1.5">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Model</span>
+          <Input
+            value={config.model ?? ""}
+            onChange={(event) => onModelChange(event.target.value)}
+            placeholder="Leave blank for CLI default"
+            className="border-white/10 bg-black/25 text-slate-100"
+          />
+        </label>
+        <label className="grid gap-1.5">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Extra CLI args</span>
+          <Textarea
+            value={argsToText(config.extra_args)}
+            onChange={(event) => onArgsChange(event.target.value)}
+            placeholder={"One argument per line\ne.g. --include-directories\n../shared"}
+            rows={3}
+            className="min-h-24 resize-none border-white/10 bg-black/25 text-slate-100"
+          />
+        </label>
+      </div>
+      <div className="mt-3 rounded-md border border-white/10 bg-black/40 p-2">
+        <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">Preview</div>
+        <code className="block whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-400">
+          {commandPreview}
+        </code>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsModal({
   settings,
   statuses,
@@ -280,12 +404,13 @@ export function SettingsModal({
   onRefreshStatuses,
   onClose,
 }: SettingsModalProps) {
-  const [draft, setDraft] = useState<AppSettings>(settings);
+  const [draft, setDraft] = useState<AppSettings>(() => normalizeSettings(settings));
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [expandedProvider, setExpandedProvider] = useState<AgentType | null>(null);
 
   useEffect(() => {
-    setDraft(settings);
+    setDraft(normalizeSettings(settings));
   }, [settings]);
 
   const statusByType = useMemo(
@@ -306,14 +431,85 @@ export function SettingsModal({
     }));
   }
 
+  function updateProviderModel(provider: AgentType, value: string) {
+    setDraft((current) => {
+      const normalized = normalizeSettings(current);
+      const model = value.trim() || null;
+      if (provider === "claude_code") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            claude_code: { ...normalized.agent_configs!.claude_code!, model },
+          },
+        };
+      }
+      if (provider === "codex") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            codex: { ...normalized.agent_configs!.codex!, model },
+          },
+        };
+      }
+      if (provider === "gemini") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            gemini: { ...normalized.agent_configs!.gemini!, model },
+          },
+        };
+      }
+      return normalized;
+    });
+  }
+
+  function updateProviderArgs(provider: AgentType, value: string) {
+    setDraft((current) => {
+      const normalized = normalizeSettings(current);
+      const extra_args = textToArgs(value);
+      if (provider === "claude_code") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            claude_code: { ...normalized.agent_configs!.claude_code!, extra_args },
+          },
+        };
+      }
+      if (provider === "codex") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            codex: { ...normalized.agent_configs!.codex!, extra_args },
+          },
+        };
+      }
+      if (provider === "gemini") {
+        return {
+          ...normalized,
+          agent_configs: {
+            ...normalized.agent_configs,
+            gemini: { ...normalized.agent_configs!.gemini!, extra_args },
+          },
+        };
+      }
+      return normalized;
+    });
+  }
+
   async function handleSave() {
     setIsSaving(true);
     try {
+      const normalizedDraft = normalizeSettings(draft);
       await onSave({
-        ...draft,
+        ...normalizedDraft,
         agent_setup_seen: settings.agent_setup_seen || hasRequiredDefaults,
-        planning_model: draft.planning_model?.trim() || null,
-        execution_model: draft.execution_model?.trim() || null,
+        planning_model: normalizedDraft.planning_model?.trim() || null,
+        execution_model: normalizedDraft.execution_model?.trim() || null,
       });
       onClose();
     } finally {
@@ -424,18 +620,33 @@ export function SettingsModal({
 
               {BUILT_IN_AGENT_TYPES.map((provider) => {
                 const status = statusByType.get(provider) ?? null;
+                const normalizedDraft = normalizeSettings(draft);
+                const config = configForProvider(normalizedDraft, provider);
                 return (
-                  <ProviderRow
-                    key={provider}
-                    provider={provider}
-                    status={status}
-                    selectedForPlanning={draft.planning_agent === provider}
-                    selectedForExecution={draft.execution_agent === provider}
-                    isSaving={isSaving}
-                    onUseBoth={() => useProviderForBoth(provider)}
-                    onUsePlanning={() => setDraft((current) => ({ ...current, planning_agent: provider }))}
-                    onUseExecution={() => setDraft((current) => ({ ...current, execution_agent: provider }))}
-                  />
+                  <div key={provider} className="space-y-2">
+                    <ProviderRow
+                      provider={provider}
+                      status={status}
+                      selectedForPlanning={draft.planning_agent === provider}
+                      selectedForExecution={draft.execution_agent === provider}
+                      isSaving={isSaving}
+                      configOpen={expandedProvider === provider}
+                      onToggleConfig={() =>
+                        setExpandedProvider((current) => (current === provider ? null : provider))
+                      }
+                      onUseBoth={() => useProviderForBoth(provider)}
+                      onUsePlanning={() => setDraft((current) => ({ ...current, planning_agent: provider }))}
+                      onUseExecution={() => setDraft((current) => ({ ...current, execution_agent: provider }))}
+                    />
+                    {expandedProvider === provider && config ? (
+                      <ProviderConfigPanel
+                        provider={provider}
+                        config={config}
+                        onModelChange={(value) => updateProviderModel(provider, value)}
+                        onArgsChange={(value) => updateProviderArgs(provider, value)}
+                      />
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
