@@ -29,6 +29,7 @@ import {
   Brain,
   CircleDashed,
   Settings,
+  ArrowLeft,
   Loader2,
   RefreshCw,
   Sparkles,
@@ -235,22 +236,18 @@ function ProviderRow({
   selectedForPlanning,
   selectedForExecution,
   isSaving,
-  configOpen,
   onUseBoth,
   onUsePlanning,
   onUseExecution,
-  onToggleConfig,
 }: {
   provider: AgentType;
   status: AgentProviderReadiness | null;
   selectedForPlanning: boolean;
   selectedForExecution: boolean;
   isSaving: boolean;
-  configOpen: boolean;
   onUseBoth: () => void;
   onUsePlanning: () => void;
   onUseExecution: () => void;
-  onToggleConfig: () => void;
 }) {
   const summary = PROVIDER_SUMMARIES[provider];
   const Icon = summary.icon;
@@ -296,20 +293,6 @@ function ProviderRow({
             }
           >
             Use for both
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onToggleConfig}
-            disabled={isSaving}
-            className={
-              configOpen
-                ? "rounded-lg border-sky-300/50 bg-sky-500/15 text-sky-50 hover:bg-sky-500/20"
-                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10"
-            }
-          >
-            <Settings className="h-3.5 w-3.5" />
-            Configure
           </Button>
           <Button
             variant="outline"
@@ -394,6 +377,55 @@ function ProviderConfigPanel({
   );
 }
 
+function CliSettingsView({
+  draft,
+  statuses,
+  onModelChange,
+  onArgsChange,
+}: {
+  draft: AppSettings;
+  statuses: Map<AgentType, AgentProviderReadiness>;
+  onModelChange: (provider: AgentType, value: string) => void;
+  onArgsChange: (provider: AgentType, value: string) => void;
+}) {
+  const normalizedDraft = normalizeSettings(draft);
+
+  return (
+    <div className="space-y-3">
+      {BUILT_IN_AGENT_TYPES.map((provider) => {
+        const summary = PROVIDER_SUMMARIES[provider];
+        const Icon = summary.icon;
+        const config = configForProvider(normalizedDraft, provider);
+        const status = statuses.get(provider);
+        if (!config) return null;
+
+        return (
+          <section key={provider} className="rounded-lg border border-white/10 bg-black/25 p-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className={`rounded-lg border border-white/10 bg-white/5 p-2.5 ${summary.accent}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-50">{getAgentLabel(provider)}</div>
+                  <div className="mt-1 text-xs text-slate-500">{summary.description}</div>
+                </div>
+              </div>
+              {status ? <AgentStatusBadge status={status.status} /> : null}
+            </div>
+            <ProviderConfigPanel
+              provider={provider}
+              config={config}
+              onModelChange={(value) => onModelChange(provider, value)}
+              onArgsChange={(value) => onArgsChange(provider, value)}
+            />
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SettingsModal({
   settings,
   statuses,
@@ -407,7 +439,7 @@ export function SettingsModal({
   const [draft, setDraft] = useState<AppSettings>(() => normalizeSettings(settings));
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [expandedProvider, setExpandedProvider] = useState<AgentType | null>(null);
+  const [view, setView] = useState<"providers" | "cli">("providers");
 
   useEffect(() => {
     setDraft(normalizeSettings(settings));
@@ -556,100 +588,123 @@ export function SettingsModal({
                     Agent Bay
                   </div>
                   <DialogTitle className="mt-1 text-xl text-slate-50">
-                    {onboarding ? "Choose your agents" : "Agent defaults"}
+                    {view === "cli" ? "CLI settings" : onboarding ? "Choose your agents" : "Agent defaults"}
                   </DialogTitle>
                   <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-400">
-                    Pick one provider for both roles, or split planning and execution when you need different agents.
+                    {view === "cli"
+                      ? "Set default models and CLI arguments for each provider."
+                      : "Pick one provider for both roles, or split planning and execution when you need different agents."}
                   </DialogDescription>
                 </div>
 
-                <Button
-                  variant="outline"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing || isSaving}
-                  className="shrink-0 rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                >
-                  {isRefreshing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  {view === "cli" ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => setView("providers")}
+                      disabled={isSaving}
+                      className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Agent defaults
+                    </Button>
                   ) : (
-                    <RefreshCw className="h-4 w-4" />
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => setView("cli")}
+                        disabled={isSaving}
+                        className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      >
+                        <Settings className="h-4 w-4" />
+                        CLI settings
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleRefresh}
+                        disabled={isRefreshing || isSaving}
+                        className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      >
+                        {isRefreshing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                        Validate
+                      </Button>
+                    </>
                   )}
-                  Validate
-                </Button>
+                </div>
               </div>
             </DialogHeader>
           </div>
 
           <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <CurrentRoleCard
-                role="planning"
-                focus={focusRole === "planning"}
-                selectedAgent={draft.planning_agent}
-                status={planningStatus}
+            {view === "cli" ? (
+              <CliSettingsView
+                draft={draft}
+                statuses={statusByType}
+                onModelChange={updateProviderModel}
+                onArgsChange={updateProviderArgs}
               />
-              <CurrentRoleCard
-                role="execution"
-                focus={focusRole === "execution"}
-                selectedAgent={draft.execution_agent}
-                status={executionStatus}
-              />
-            </div>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <CurrentRoleCard
+                    role="planning"
+                    focus={focusRole === "planning"}
+                    selectedAgent={draft.planning_agent}
+                    status={planningStatus}
+                  />
+                  <CurrentRoleCard
+                    role="execution"
+                    focus={focusRole === "execution"}
+                    selectedAgent={draft.execution_agent}
+                    status={executionStatus}
+                  />
+                </div>
 
-            {onboarding && !hasRequiredDefaults ? (
-              <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                <div className="flex items-start gap-2">
-                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <div className="font-medium text-amber-50">Choose planning and execution defaults to save.</div>
-                    <div className="mt-0.5 text-xs text-amber-100/80">
-                      Pick one provider for both roles, or assign planning and execution separately below.
+                {onboarding && !hasRequiredDefaults ? (
+                  <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                    <div className="flex items-start gap-2">
+                      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                      <div>
+                        <div className="font-medium text-amber-50">Choose planning and execution defaults to save.</div>
+                        <div className="mt-0.5 text-xs text-amber-100/80">
+                          Pick one provider for both roles, or assign planning and execution separately below.
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            ) : null}
+                ) : null}
 
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Providers</div>
-                  <div className="mt-1 text-xs text-slate-500">Use one button for the normal setup, or split roles explicitly.</div>
-                </div>
-              </div>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Providers</div>
+                      <div className="mt-1 text-xs text-slate-500">Use one button for the normal setup, or split roles explicitly.</div>
+                    </div>
+                  </div>
 
-              {BUILT_IN_AGENT_TYPES.map((provider) => {
-                const status = statusByType.get(provider) ?? null;
-                const normalizedDraft = normalizeSettings(draft);
-                const config = configForProvider(normalizedDraft, provider);
-                return (
-                  <div key={provider} className="space-y-2">
+                  {BUILT_IN_AGENT_TYPES.map((provider) => {
+                    const status = statusByType.get(provider) ?? null;
+                    return (
                     <ProviderRow
+                      key={provider}
                       provider={provider}
                       status={status}
                       selectedForPlanning={draft.planning_agent === provider}
                       selectedForExecution={draft.execution_agent === provider}
                       isSaving={isSaving}
-                      configOpen={expandedProvider === provider}
-                      onToggleConfig={() =>
-                        setExpandedProvider((current) => (current === provider ? null : provider))
-                      }
                       onUseBoth={() => useProviderForBoth(provider)}
                       onUsePlanning={() => setDraft((current) => ({ ...current, planning_agent: provider }))}
                       onUseExecution={() => setDraft((current) => ({ ...current, execution_agent: provider }))}
                     />
-                    {expandedProvider === provider && config ? (
-                      <ProviderConfigPanel
-                        provider={provider}
-                        config={config}
-                        onModelChange={(value) => updateProviderModel(provider, value)}
-                        onArgsChange={(value) => updateProviderArgs(provider, value)}
-                      />
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="relative flex flex-col-reverse gap-2 border-t border-white/10 bg-[#050816]/90 px-5 py-3 sm:flex-row sm:justify-end sm:px-6">
