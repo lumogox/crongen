@@ -27,7 +27,7 @@ export function SessionCard({ session, isSelected, onSelect }: SessionCardProps)
       className={`flex w-full items-start gap-3 rounded-2xl border p-3 text-left transition-all ${
         isSelected
           ? "border-sky-400/30 bg-sky-500/10"
-          : "border-white/10 bg-white/[0.02] hover:bg-white/5"
+          : "border-slate-700/70 bg-[#182235] hover:bg-[#243044]"
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -38,15 +38,15 @@ export function SessionCard({ session, isSelected, onSelect }: SessionCardProps)
           <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${status.tone}`} />
         </div>
         {session.prompt && (
-          <div className="mt-1 truncate text-xs text-slate-500">
+          <div className="mt-1 truncate text-xs text-slate-400">
             {session.prompt}
           </div>
         )}
-        <div className="mt-1.5 text-[11px] text-slate-600">
+        <div className="mt-1.5 text-[11px] text-slate-500">
           {formatSessionRuntime(session)}
         </div>
       </div>
-      <ChevronRight className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${isSelected ? "text-sky-300 rotate-90" : "text-slate-600"}`} />
+      <ChevronRight className={`mt-0.5 h-4 w-4 shrink-0 transition-transform ${isSelected ? "text-sky-300 rotate-90" : "text-slate-500"}`} />
     </button>
   );
 }

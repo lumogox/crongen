@@ -89,14 +89,14 @@ export function SessionModal({
         </DialogHeader>
 
         {/* Mode toggle */}
-        <div className="flex items-center rounded-full border border-white/10 bg-white/5 p-0.5">
+        <div className="flex items-center rounded-full border border-slate-700/70 bg-[#182235] p-0.5">
           {onQuickRun && (
             <button
               onClick={() => { setMode("quick"); setGenError(null); }}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                 mode === "quick"
                   ? "bg-slate-100 text-slate-950"
-                  : "text-slate-400 hover:text-slate-200"
+                  : "text-slate-300 hover:text-slate-100"
               }`}
             >
               <Zap className="h-3 w-3" />
@@ -108,7 +108,7 @@ export function SessionModal({
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
               mode === "manual"
                 ? "bg-slate-100 text-slate-950"
-                : "text-slate-400 hover:text-slate-200"
+                : "text-slate-300 hover:text-slate-100"
             }`}
           >
             <PenLine className="h-3 w-3" />
@@ -120,7 +120,7 @@ export function SessionModal({
               className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                 mode === "generate"
                   ? "bg-slate-100 text-slate-950"
-                  : "text-slate-400 hover:text-slate-200"
+                  : "text-slate-300 hover:text-slate-100"
               }`}
             >
               <Sparkles className="h-3 w-3" />
@@ -156,7 +156,7 @@ export function SessionModal({
                     variant="outline"
                     size="sm"
                     onClick={() => onOpenAgentSetup(activeRole)}
-                    className="rounded-full border-amber-300/20 bg-black/20 text-amber-50 hover:bg-black/30"
+                    className="rounded-full border-amber-300/30 bg-amber-950/30 text-amber-50 hover:bg-amber-900/35"
                   >
                     <Settings2 className="h-3.5 w-3.5" />
                     Open setup
@@ -207,11 +207,11 @@ export function SessionModal({
                   className={`rounded-xl border p-2.5 text-left transition-all ${
                     complexity === "linear"
                       ? "border-sky-400/40 bg-sky-500/10 ring-1 ring-sky-400/30"
-                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                      : "border-slate-700/70 bg-[#182235] hover:border-slate-500/80 hover:bg-[#243044]"
                   }`}
                 >
                   <div className="text-xs font-medium text-slate-100">Linear</div>
-                  <div className="text-[11px] text-slate-500">One straight chain, no branches</div>
+                  <div className="text-[11px] text-slate-400">One straight chain, no branches</div>
                 </button>
                 <button
                   type="button"
@@ -219,11 +219,11 @@ export function SessionModal({
                   className={`rounded-xl border p-2.5 text-left transition-all ${
                     complexity === "branching"
                       ? "border-violet-400/40 bg-violet-500/10 ring-1 ring-violet-400/30"
-                      : "border-white/10 bg-white/[0.03] hover:border-white/20"
+                      : "border-slate-700/70 bg-[#182235] hover:border-slate-500/80 hover:bg-[#243044]"
                   }`}
                 >
                   <div className="text-xs font-medium text-slate-100">Branching</div>
-                  <div className="text-[11px] text-slate-500">Compare approaches, then merge</div>
+                  <div className="text-[11px] text-slate-400">Compare approaches, then merge</div>
                 </button>
               </div>
             </div>

@@ -188,9 +188,9 @@ function ExecutionNodeInner({
           ? "border-sky-400/50 ring-2 ring-sky-400/30 animate-pulse"
           : selected
             ? "border-sky-400/40 ring-1 ring-sky-400/40"
-            : "border-white/10"
+            : "border-slate-700/70"
       }`}
-      style={{ backgroundColor: "rgba(2, 6, 23, 0.92)" }}
+      style={{ backgroundColor: "rgba(18, 26, 42, 0.96)" }}
     >
       <Handle
         type="target"
@@ -202,7 +202,7 @@ function ExecutionNodeInner({
       {canDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); onDeleteNode(node.id); }}
-          className="absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-white/10 bg-slate-900 text-slate-500 opacity-0 transition-opacity hover:border-rose-400/40 hover:bg-rose-500/20 hover:text-rose-300 group-hover/node:opacity-100"
+          className="absolute -right-2 -top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-slate-600/70 bg-[#182235] text-slate-400 opacity-0 transition-opacity hover:border-rose-400/40 hover:bg-rose-500/20 hover:text-rose-300 group-hover/node:opacity-100"
           title="Delete node"
         >
           <X className="h-3 w-3" />
@@ -213,7 +213,7 @@ function ExecutionNodeInner({
         {/* Top row: type label + status pill */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-slate-400">
               <TypeIcon className="h-3.5 w-3.5" />
               <span>{typeMeta.label}</span>
             </div>
@@ -255,16 +255,16 @@ function ExecutionNodeInner({
 
         {/* Execution indicator */}
         {typeMeta.summary ? (
-          <div className="mt-1 text-xs text-slate-500">{typeMeta.summary}</div>
+          <div className="mt-1 text-xs text-slate-400">{typeMeta.summary}</div>
         ) : shortBranch ? (
-          <div className="mt-1 text-xs text-slate-500">{shortBranch}</div>
+          <div className="mt-1 text-xs text-slate-400">{shortBranch}</div>
         ) : null}
 
         {/* Tags row — hide for structural nodes without data */}
         {(shortHash || node.exit_code != null) && (
           <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
             {shortHash && (
-              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-slate-300">
+              <span className="rounded-full border border-slate-600/70 bg-[#182235] px-2 py-1 text-slate-300">
                 {shortHash}
               </span>
             )}
@@ -285,7 +285,7 @@ function ExecutionNodeInner({
 
       {/* Inline action bar */}
       {actions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-white/10 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-700/70 px-3 py-2">
           {actions.map((action) => {
             const Icon = action.icon;
             return (

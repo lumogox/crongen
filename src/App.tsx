@@ -1092,9 +1092,9 @@ function App() {
     : null;
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-100">
+    <div className="min-h-screen bg-[#0b1020] text-slate-100">
       <div className="h-screen overflow-hidden p-4">
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/70 p-4 shadow-[0_30px_120px_rgba(2,6,23,0.65)] backdrop-blur-xl">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[2rem] border border-slate-700/60 bg-[#101827] p-4 shadow-[0_24px_90px_rgba(2,6,23,0.48)] backdrop-blur-xl">
           <ContentArea
             projects={projects}
             selectedProjectId={selectedProjectId}

@@ -120,7 +120,7 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
       onMouseDown={onMouseDown}
       className="group flex w-2 shrink-0 cursor-col-resize items-center justify-center"
     >
-      <div className="h-8 w-0.5 rounded-full bg-white/10 transition-colors group-hover:bg-white/30 group-active:bg-sky-400/60" />
+      <div className="h-8 w-0.5 rounded-full bg-slate-600/60 transition-colors group-hover:bg-slate-400/80 group-active:bg-sky-400/70" />
     </div>
   );
 }
@@ -251,10 +251,10 @@ function ContentAreaInner({
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
       {/* Header */}
-      <header className="no-select flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-white/[0.03] px-4 py-3">
+      <header className="no-select flex flex-wrap items-center justify-between gap-3 rounded-[1.5rem] border border-slate-700/70 bg-[#121a2a] px-4 py-3">
         <div className="flex items-center gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.22em] text-slate-500">
+            <div className="text-xs uppercase tracking-[0.22em] text-slate-400">
               crongen
             </div>
             <div className="mt-1 text-lg font-semibold text-slate-50">
@@ -265,13 +265,13 @@ function ContentAreaInner({
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Flow mode toggle */}
-          <div className="flex items-center rounded-full border border-white/10 bg-white/5 p-0.5">
+          <div className="flex items-center rounded-full border border-slate-700/70 bg-[#182235] p-0.5">
             <button
               onClick={() => onFlowModeChange("linear")}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 flowMode === "linear"
                   ? "bg-slate-100 text-slate-950"
-                  : "text-slate-400 hover:text-slate-200"
+                  : "text-slate-300 hover:text-slate-100"
               }`}
             >
               Linear
@@ -281,7 +281,7 @@ function ContentAreaInner({
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 flowMode === "branching"
                   ? "bg-slate-100 text-slate-950"
-                  : "text-slate-400 hover:text-slate-200"
+                  : "text-slate-300 hover:text-slate-100"
               }`}
             >
               Branching
@@ -292,7 +292,7 @@ function ContentAreaInner({
             variant="outline"
             disabled={!selectedProject}
             onClick={onCreateSession}
-            className="rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-30"
+            className="rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044] disabled:opacity-40"
           >
             <Sparkles className="mr-2 h-4 w-4" />
             New task
@@ -340,7 +340,7 @@ function ContentAreaInner({
                 </Button>
               </>
             ) : hasPendingNodes ? (
-              <div className="flex items-center rounded-full border border-white/10 bg-white/5 p-0.5">
+              <div className="flex items-center rounded-full border border-slate-700/70 bg-[#182235] p-0.5">
                 {canContinue ? (
                   <>
                     <button
@@ -392,7 +392,7 @@ function ContentAreaInner({
                   )
                 }
                 onClick={() => onForkNode(selectedNode.id)}
-                className="rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-30"
+                className="rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044] disabled:opacity-40"
               >
                 <GitFork className="mr-2 h-4 w-4" />
                 Branch
@@ -401,7 +401,7 @@ function ContentAreaInner({
                 variant="outline"
                 disabled={selectedNode.status !== "completed"}
                 onClick={() => onMergeNode(selectedNode.id)}
-                className="rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 disabled:opacity-30"
+                className="rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044] disabled:opacity-40"
               >
                 <GitMerge className="mr-2 h-4 w-4" />
                 Merge
@@ -413,7 +413,7 @@ function ContentAreaInner({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="rounded-full p-2 text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
+              className="rounded-full p-2 text-slate-300 transition-colors hover:bg-[#243044] hover:text-slate-100"
               title="Settings"
             >
               <Settings className="h-4 w-4" />
@@ -431,7 +431,7 @@ function ContentAreaInner({
           <Button
             variant="outline"
             onClick={onOpenSettings}
-            className="rounded-full border-amber-300/20 bg-black/20 text-amber-50 hover:bg-black/30"
+            className="rounded-full border-amber-300/30 bg-amber-950/30 text-amber-50 hover:bg-amber-900/35"
           >
             <Settings className="mr-2 h-4 w-4" />
             Open setup
@@ -469,7 +469,7 @@ function ContentAreaInner({
                 subtitle={selectedProject.repo_path}
               />
               <NodePalette flowMode={flowMode} />
-              <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-white/10" style={{ backgroundColor: "#050b16" }}>
+              <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-slate-700/70" style={{ backgroundColor: "#111827" }}>
                 <DecisionCanvas
                   treeNodes={treeNodes}
                   allNodes={treeNodes}
@@ -491,12 +491,12 @@ function ContentAreaInner({
               </div>
             </>
           ) : (
-            <div className="flex flex-1 items-center justify-center rounded-[1.75rem] border border-white/10 bg-white/[0.03]">
+            <div className="flex flex-1 items-center justify-center rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a]">
               <div className="text-center">
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-slate-300">
                   Choose a project folder from the sidebar
                 </p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Start new or open existing code to begin
                 </p>
               </div>
@@ -545,10 +545,10 @@ function ContentAreaInner({
           ) : debugMode && treeNodes.length > 0 ? (
             <ToonViewer nodes={treeNodes} />
           ) : (
-            <div className="flex h-full items-center justify-center rounded-[1.75rem] border border-white/10 bg-white/[0.03]">
+            <div className="flex h-full items-center justify-center rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a]">
               <div className="text-center px-6">
-                <p className="text-sm text-slate-400">No node selected</p>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-sm text-slate-300">No node selected</p>
+                <p className="text-xs text-slate-400 mt-1">
                   Click a node in the graph to inspect it
                 </p>
               </div>
@@ -597,17 +597,17 @@ function ToonViewer({ nodes }: { nodes: DecisionNode[] }) {
   }, [selectedId]);
 
   return (
-    <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a]">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+      <div className="flex items-center gap-3 border-b border-slate-700/70 px-4 py-3">
         <FileCode className="h-4 w-4 text-amber-400" />
-        <span className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+        <span className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
           TOON Context
         </span>
         <select
           value={selectedId}
           onChange={(e) => setSelectedId(e.target.value)}
-          className="ml-auto rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-slate-200 outline-none focus:border-sky-400/40"
+          className="ml-auto rounded-lg border border-slate-600/70 bg-[#0f1726] px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-400/60"
         >
           {runnableNodes.map((n) => (
             <option key={n.id} value={n.id}>
@@ -619,7 +619,7 @@ function ToonViewer({ nodes }: { nodes: DecisionNode[] }) {
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-auto p-4">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
             <Loader2 className="h-3 w-3 animate-spin" />
             Loading context...
           </div>

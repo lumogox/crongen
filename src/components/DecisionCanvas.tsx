@@ -130,11 +130,11 @@ export function DecisionCanvas({
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+          <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-6">
             <div className="text-sm font-medium text-slate-300">
               No execution tree yet
             </div>
-            <div className="mt-2 text-xs text-slate-500">
+            <div className="mt-2 text-xs text-slate-400">
               Create a new task to start building an execution flow.
               <br />
               Then drag node types from the palette to design your tree.

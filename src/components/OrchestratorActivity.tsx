@@ -59,7 +59,7 @@ interface OrchestratorActivityProps {
 }
 
 const statusIcon: Record<string, React.ReactNode> = {
-  pending: <Clock className="size-3 text-slate-500" />,
+  pending: <Clock className="size-3 text-slate-400" />,
   running: <Loader2 className="size-3 text-amber-400 animate-spin" />,
   paused: <Pause className="size-3 text-sky-400" />,
   completed: <CheckCircle2 className="size-3 text-emerald-400" />,
@@ -68,7 +68,7 @@ const statusIcon: Record<string, React.ReactNode> = {
 };
 
 const statusColor: Record<string, string> = {
-  pending: "text-slate-500",
+  pending: "text-slate-400",
   running: "text-amber-300",
   paused: "text-sky-300",
   completed: "text-emerald-300",
@@ -120,12 +120,12 @@ export function OrchestratorActivity({
   const canStop = viewingNode?.status === "running" || viewingNode?.status === "paused";
 
   return (
-    <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] shadow-xl overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a] shadow-xl">
       {/* Header */}
-      <div className="border-b border-white/10 px-5 pt-4 pb-3">
+      <div className="border-b border-slate-700/70 px-5 pt-4 pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
               Orchestrator
             </div>
             <div className="mt-1 text-sm font-medium text-slate-100">
@@ -142,11 +142,11 @@ export function OrchestratorActivity({
             <div className="text-lg font-semibold tabular-nums text-slate-100">
               {orchestratorStatus.completed_count}/{orchestratorStatus.total_count}
             </div>
-            <div className="text-[11px] text-slate-500">nodes done</div>
+            <div className="text-[11px] text-slate-400">nodes done</div>
           </div>
         </div>
         {/* Progress bar */}
-        <div className="mt-3 h-1 rounded-full bg-white/5 overflow-hidden">
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-[#243044]">
           <div
             className="h-full rounded-full bg-emerald-500 transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
@@ -155,7 +155,7 @@ export function OrchestratorActivity({
       </div>
 
       {/* Node list — compact scrollable */}
-      <div className="border-b border-white/10 max-h-[200px] overflow-y-auto">
+      <div className="max-h-[200px] overflow-y-auto border-b border-slate-700/70">
         {runnableNodes.map((node) => {
           const isCurrent = node.id === orchestratorStatus.current_node_id;
           const isViewing = node.id === viewingNodeId;
@@ -169,21 +169,21 @@ export function OrchestratorActivity({
               }}
               className={`flex w-full items-center gap-2.5 px-5 py-2 text-left text-sm transition-colors ${
                 isViewing
-                  ? "bg-white/10"
+                  ? "bg-sky-500/10"
                   : isCurrent
-                    ? "bg-amber-500/5"
-                    : "hover:bg-white/5"
+                    ? "bg-amber-500/10"
+                    : "hover:bg-[#182235]"
               }`}
             >
               {statusIcon[node.status] ?? statusIcon.pending}
               <span
                 className={`min-w-0 flex-1 truncate ${
-                  isCurrent ? "text-slate-100 font-medium" : "text-slate-400"
+                  isCurrent ? "font-medium text-slate-100" : "text-slate-300"
                 }`}
               >
                 {node.label}
               </span>
-              <span className={`text-[11px] tabular-nums ${statusColor[node.status] ?? "text-slate-500"}`}>
+              <span className={`text-[11px] tabular-nums ${statusColor[node.status] ?? "text-slate-400"}`}>
                 {(() => {
                   const elapsed = getNodeElapsedSeconds(node, now);
                   return elapsed == null ? node.status : formatDuration(elapsed);
@@ -198,7 +198,7 @@ export function OrchestratorActivity({
       <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
         {viewingNode ? (
           <div className="flex h-full min-w-0 flex-col">
-            <div className="flex items-center gap-2 border-b border-white/10 px-5 py-2">
+            <div className="flex items-center gap-2 border-b border-slate-700/70 px-5 py-2">
               <div className="size-2 rounded-full bg-amber-400 animate-pulse" style={{
                 animationPlayState: viewingNode.status === "running" ? "running" : "paused",
                 backgroundColor: viewingNode.status === "completed" ? "#34d399"
@@ -209,11 +209,11 @@ export function OrchestratorActivity({
               <span className="text-xs text-slate-300 truncate font-medium">
                 {viewingNode.label}
               </span>
-              <span className="ml-auto text-[10px] text-slate-500 font-mono">
+              <span className="ml-auto font-mono text-[10px] text-slate-400">
                 {viewingNode.id.slice(0, 8)}
               </span>
             </div>
-            <div className="border-b border-white/10 bg-black/10 px-5 py-3">
+            <div className="border-b border-slate-700/70 bg-[#182235] px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 {canValidate && onValidateRuntime && (
                   <Button
@@ -273,7 +273,7 @@ export function OrchestratorActivity({
           </div>
         ) : (
           <div className="flex h-full items-center justify-center">
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-400">
               Waiting for first node to start...
             </span>
           </div>

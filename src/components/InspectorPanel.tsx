@@ -107,12 +107,12 @@ export function InspectorPanel({
   const isSessionRoot = node.parent_id === null;
 
   return (
-    <div className="flex h-full flex-col rounded-[1.75rem] border border-white/10 bg-white/[0.03] shadow-xl overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a] shadow-xl">
       {/* Header */}
-      <div className="border-b border-white/10 px-6 pt-5 pb-4">
+      <div className="border-b border-slate-700/70 px-6 pt-5 pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">
               Inspector
             </div>
             <div className="mt-2 text-xl font-semibold text-slate-50 truncate">
@@ -133,19 +133,19 @@ export function InspectorPanel({
 
         {/* Type / Owner grid */}
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-slate-500">Type</div>
+          <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
+            <div className="text-xs text-slate-400">Type</div>
             <div className="mt-1 text-slate-100">{typeMeta.label}</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-            <div className="text-xs text-slate-500">Project</div>
+          <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
+            <div className="text-xs text-slate-400">Project</div>
             <div className="mt-1 text-slate-100">{project.name}</div>
           </div>
         </div>
       </div>
 
       {/* Tab bar — pill style */}
-      <div className="border-b border-white/10 px-6 py-3">
+      <div className="border-b border-slate-700/70 px-6 py-3">
         <div className="flex gap-2">
           {tabs.map((tab) => (
             <button
@@ -154,7 +154,7 @@ export function InspectorPanel({
               className={`rounded-full px-3 py-1.5 text-sm transition-colors ${
                 activeTab === tab
                   ? "bg-slate-100 text-slate-950"
-                  : "bg-white/5 text-slate-300 hover:bg-white/10"
+                  : "bg-[#182235] text-slate-300 hover:bg-[#243044]"
               }`}
             >
               {tab}
@@ -182,7 +182,7 @@ export function InspectorPanel({
                   <div className="text-[11px] uppercase tracking-[0.18em] text-sky-300 mb-2">Designed — not yet executed</div>
                   <div className="space-y-2">
                     <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Label</label>
+                      <label className="mb-1 block text-xs text-slate-400">Label</label>
                       <input
                         type="text"
                         defaultValue={node.label}
@@ -191,11 +191,11 @@ export function InspectorPanel({
                             onUpdateNode(node.id, e.target.value, node.prompt);
                           }
                         }}
-                        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400/40"
+                        className="w-full rounded-xl border border-slate-600/70 bg-[#0f1726] px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400/60"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-slate-500 mb-1 block">Prompt</label>
+                      <label className="mb-1 block text-xs text-slate-400">Prompt</label>
                       <textarea
                         defaultValue={node.prompt}
                         onBlur={(e) => {
@@ -204,7 +204,7 @@ export function InspectorPanel({
                           }
                         }}
                         rows={3}
-                        className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400/40 resize-none"
+                        className="w-full resize-none rounded-xl border border-slate-600/70 bg-[#0f1726] px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-sky-400/60"
                       />
                     </div>
                   </div>
@@ -224,7 +224,7 @@ export function InspectorPanel({
                 <Button
                   variant="outline"
                   onClick={() => onValidateRuntime(node.id)}
-                  className="mt-3 rounded-2xl border-amber-300/20 bg-black/20 text-amber-50 hover:bg-black/30"
+                  className="mt-3 rounded-2xl border-amber-300/30 bg-amber-950/30 text-amber-50 hover:bg-amber-900/35"
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Validate session state
@@ -233,7 +233,7 @@ export function InspectorPanel({
                   <Button
                     variant="outline"
                     onClick={() => onSendEnter(node.id)}
-                    className="mt-3 rounded-2xl border-emerald-300/20 bg-black/20 text-emerald-50 hover:bg-black/30"
+                    className="mt-3 rounded-2xl border-emerald-300/30 bg-emerald-950/30 text-emerald-50 hover:bg-emerald-900/35"
                   >
                     <CornerDownLeft className="mr-2 h-4 w-4" />
                     Send Enter
@@ -243,7 +243,7 @@ export function InspectorPanel({
                   <Button
                     variant="outline"
                     onClick={() => onStop(node.id)}
-                    className="mt-3 rounded-2xl border-rose-300/20 bg-black/20 text-rose-50 hover:bg-black/30"
+                    className="mt-3 rounded-2xl border-rose-300/30 bg-rose-950/30 text-rose-50 hover:bg-rose-900/35"
                   >
                     <Square className="mr-2 h-4 w-4" />
                     Stop session
@@ -266,7 +266,7 @@ export function InspectorPanel({
                   {children.map((child) => (
                     <div
                       key={child.id}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2"
+                      className="flex items-center justify-between rounded-xl border border-slate-700/70 bg-[#182235] px-3 py-2"
                     >
                       <span className="text-slate-200 truncate">
                         {child.label}
@@ -289,7 +289,7 @@ export function InspectorPanel({
             )}
 
             {/* Overview content */}
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-6 text-slate-300">
+            <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-4 text-sm leading-6 text-slate-300">
               {node.prompt || "No details available."}
             </div>
 
@@ -297,14 +297,14 @@ export function InspectorPanel({
             {((!isStructural && node.branch_name) || node.commit_hash) && (
               <div className="space-y-2">
                 {!isStructural && node.branch_name && (
-                  <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200">
-                    <ScrollText className="h-4 w-4 text-slate-500" />
+                  <div className="flex items-center gap-3 rounded-2xl border border-slate-700/70 bg-[#182235] px-3 py-2 text-sm text-slate-200">
+                    <ScrollText className="h-4 w-4 text-slate-400" />
                     <span className="font-mono text-xs">{node.branch_name}</span>
                   </div>
                 )}
                 {node.commit_hash && (
-                  <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-slate-200">
-                    <ScrollText className="h-4 w-4 text-slate-500" />
+                  <div className="flex items-center gap-3 rounded-2xl border border-slate-700/70 bg-[#182235] px-3 py-2 text-sm text-slate-200">
+                    <ScrollText className="h-4 w-4 text-slate-400" />
                     <span className="font-mono text-xs">
                       {node.commit_hash.slice(0, 7)}
                     </span>
@@ -315,14 +315,14 @@ export function InspectorPanel({
 
             {/* Timestamps */}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-slate-500">Created</div>
+              <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
+                <div className="text-xs text-slate-400">Created</div>
                 <div className="mt-1 text-slate-100">
                   {formatRelativeTime(node.created_at)}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-xs text-slate-500">
+              <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
+                <div className="text-xs text-slate-400">
                   {isSessionRoot ? "Duration" : "Updated"}
                 </div>
                 <div className="mt-1 text-slate-100">
@@ -343,7 +343,7 @@ export function InspectorPanel({
                     <Button
                       variant="outline"
                       onClick={() => onCreateStructuralNode?.(node.id, "decision")}
-                      className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <GitFork className="mr-2 h-4 w-4" />
                       Add decision point
@@ -382,7 +382,7 @@ export function InspectorPanel({
                     <Button
                       variant="outline"
                       onClick={() => onCreateStructuralNode?.(node.id, "merge")}
-                      className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <GitMerge className="mr-2 h-4 w-4" />
                       Add review step
@@ -392,7 +392,7 @@ export function InspectorPanel({
                     <Button
                       variant="outline"
                       onClick={() => onMerge(node.id)}
-                      className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <GitMerge className="mr-2 h-4 w-4" />
                       Merge into main
@@ -405,7 +405,7 @@ export function InspectorPanel({
                 <Button
                   variant="outline"
                   onClick={() => onCreateStructuralNode?.(node.id, "final")}
-                  className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                 >
                   <Trophy className="mr-2 h-4 w-4" />
                   Add final output
@@ -439,7 +439,7 @@ export function InspectorPanel({
                 <Button
                   variant="outline"
                   onClick={() => onPause?.(node.id)}
-                  className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                 >
                   <Pause className="mr-2 h-4 w-4" />
                   Pause session
@@ -449,7 +449,7 @@ export function InspectorPanel({
                 <Button
                   variant="outline"
                   onClick={() => onResume?.(node.id)}
-                  className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                 >
                   <Play className="mr-2 h-4 w-4" />
                   Continue session
@@ -499,7 +499,7 @@ export function InspectorPanel({
                 <Button
                   variant="outline"
                   onClick={() => onResetNode(node.id)}
-                  className="justify-start rounded-2xl border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                 >
                   Reset to pending
                 </Button>

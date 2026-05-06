@@ -23,7 +23,7 @@ export function NodePalette({ flowMode }: NodePaletteProps) {
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[11px] uppercase tracking-[0.18em] text-slate-500 mr-1">
+      <span className="mr-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
         Drag
       </span>
       {items.map((item) => {
@@ -38,7 +38,7 @@ export function NodePalette({ flowMode }: NodePaletteProps) {
               e.dataTransfer.effectAllowed = "move";
             }}
             onDragEnd={() => setDragType(null)}
-            className="flex cursor-grab items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-slate-100 active:cursor-grabbing"
+            className="flex cursor-grab items-center gap-1.5 rounded-full border border-slate-700/70 bg-[#182235] px-2.5 py-1 text-[11px] font-medium text-slate-300 transition-colors hover:bg-[#243044] hover:text-slate-100 active:cursor-grabbing"
           >
             <Icon className="h-3 w-3" />
             {item.label}

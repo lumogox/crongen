@@ -57,7 +57,7 @@ function choiceClass(selected: boolean, tone = "sky") {
   return `rounded-xl border p-3 text-left transition-all ${
     selected
       ? active
-      : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+      : "border-slate-700/70 bg-[#182235] hover:border-slate-500/80 hover:bg-[#243044]"
   }`;
 }
 
@@ -152,7 +152,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                   <PackagePlus className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-slate-100">Start new</div>
-                    <div className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                    <div className="mt-0.5 text-[11px] leading-4 text-slate-400">
                       Use an empty folder and let agents scaffold the project.
                     </div>
                   </div>
@@ -167,7 +167,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                   <FolderCode className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-slate-100">Open existing</div>
-                    <div className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                    <div className="mt-0.5 text-[11px] leading-4 text-slate-400">
                       Use a folder that already contains code.
                     </div>
                   </div>
@@ -226,7 +226,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                     <div className="text-sm font-medium text-slate-100">
                       Use Agent Bay default
                     </div>
-                    <div className="text-[11px] text-slate-500">
+                    <div className="text-[11px] text-slate-400">
                       {defaultExecutionAgent
                         ? `${getAgentLabel(defaultExecutionAgent)} will be copied into this project.`
                         : "Configure a default in Agent Bay or choose an agent below."}
@@ -246,7 +246,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                     <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-slate-100">Claude Code</div>
-                      <div className="text-[11px] leading-4 text-slate-500">Claude CLI</div>
+                      <div className="text-[11px] leading-4 text-slate-400">Claude CLI</div>
                     </div>
                   </div>
                 </button>
@@ -259,7 +259,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                     <Bot className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-slate-100">Codex</div>
-                      <div className="text-[11px] leading-4 text-slate-500">OpenAI CLI</div>
+                      <div className="text-[11px] leading-4 text-slate-400">OpenAI CLI</div>
                     </div>
                   </div>
                 </button>
@@ -272,7 +272,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                     <Orbit className="mt-0.5 h-4 w-4 shrink-0 text-amber-200" />
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-slate-100">Gemini</div>
-                      <div className="text-[11px] leading-4 text-slate-500">Gemini CLI</div>
+                      <div className="text-[11px] leading-4 text-slate-400">Gemini CLI</div>
                     </div>
                   </div>
                 </button>

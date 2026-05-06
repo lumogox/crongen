@@ -94,7 +94,7 @@ function statusTone(status: AgentProviderReadiness["status"]) {
     case "coming_soon":
       return "border-slate-400/20 bg-slate-500/10 text-slate-300";
     default:
-      return "border-white/10 bg-white/5 text-slate-200";
+      return "border-slate-600/70 bg-[#182235] text-slate-200";
   }
 }
 
@@ -201,27 +201,27 @@ function CurrentRoleCard({
 
   return (
     <div
-      className={`rounded-lg border bg-black/25 p-3 ${
-        focus ? "border-sky-400/50 shadow-[0_0_0_1px_rgba(56,189,248,0.2)]" : "border-white/10"
+      className={`rounded-lg border bg-[#182235] p-3 ${
+        focus ? "border-sky-400/60 shadow-[0_0_0_1px_rgba(56,189,248,0.22)]" : "border-slate-700/70"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-sky-200">
+          <div className="rounded-lg border border-slate-600/70 bg-[#243044] p-2 text-sky-200">
             <Icon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{roleLabel}</div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{roleLabel}</div>
             <div className="mt-1 truncate text-sm font-semibold text-slate-50">
               {selectedAgent ? getAgentLabel(selectedAgent) : "Choose an agent"}
             </div>
-            <div className="mt-0.5 text-xs text-slate-500">{roleDescription}</div>
+            <div className="mt-0.5 text-xs text-slate-400">{roleDescription}</div>
           </div>
         </div>
         {status ? (
           <AgentStatusBadge status={status.status} />
         ) : (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+          <span className="rounded-full border border-slate-600/70 bg-[#243044] px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
             {selectedAgent ? "Not validated" : "Unset"}
           </span>
         )}
@@ -259,13 +259,13 @@ function ProviderRow({
 
   return (
     <section
-      className={`rounded-lg border bg-black/25 p-3 transition-colors ${
-        selected ? "border-sky-400/40 bg-sky-500/5" : "border-white/10"
+      className={`rounded-lg border bg-[#121a2a] p-3 transition-colors ${
+        selected ? "border-sky-400/50 bg-sky-500/10" : "border-slate-700/70"
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <div className={`rounded-lg border border-white/10 bg-white/5 p-2.5 ${summary.accent}`}>
+          <div className={`rounded-lg border border-slate-600/70 bg-[#243044] p-2.5 ${summary.accent}`}>
             <Icon className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -274,7 +274,7 @@ function ProviderRow({
               {status ? <AgentStatusBadge status={status.status} /> : null}
             </div>
             <div className="mt-1 text-xs text-slate-400">{summary.description} · {summary.bestFor}</div>
-            <div className="mt-1 text-xs text-slate-500">{providerHelpText(status)}</div>
+            <div className="mt-1 text-xs text-slate-400">{providerHelpText(status)}</div>
           </div>
         </div>
 
@@ -289,7 +289,7 @@ function ProviderRow({
                 ? "rounded-lg border border-sky-300/60 bg-sky-400 text-slate-950 shadow-[0_0_0_1px_rgba(125,211,252,0.25)] hover:bg-sky-300"
                 : canUseBoth
                 ? "rounded-lg bg-sky-500 text-slate-950 hover:bg-sky-400"
-                : "rounded-lg border-white/10 bg-black/20 text-slate-500"
+                : "rounded-lg border-slate-700/70 bg-[#182235] text-slate-500"
             }
           >
             Use for both
@@ -302,7 +302,7 @@ function ProviderRow({
             className={
               selectedForPlanning
                 ? "rounded-lg border-sky-300/50 bg-sky-500/20 text-sky-50 shadow-[0_0_0_1px_rgba(125,211,252,0.18)] hover:bg-sky-500/25"
-                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10 disabled:text-slate-500"
+                : "rounded-lg border-slate-700/70 bg-[#182235] text-slate-100 hover:bg-[#243044] disabled:text-slate-500"
             }
           >
             <Brain className="h-3.5 w-3.5" />
@@ -316,7 +316,7 @@ function ProviderRow({
             className={
               selectedForExecution
                 ? "rounded-lg border-emerald-300/50 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(110,231,183,0.18)] hover:bg-emerald-500/25"
-                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10 disabled:text-slate-500"
+                : "rounded-lg border-slate-700/70 bg-[#182235] text-slate-100 hover:bg-[#243044] disabled:text-slate-500"
             }
           >
             <Zap className="h-3.5 w-3.5" />
@@ -345,31 +345,31 @@ function ProviderConfigPanel({
   );
 
   return (
-    <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+    <div className="rounded-lg border border-slate-700/70 bg-[#182235] p-3">
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <label className="grid gap-1.5">
-          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Model</span>
+          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Model</span>
           <Input
             value={config.model ?? ""}
             onChange={(event) => onModelChange(event.target.value)}
             placeholder="Leave blank for CLI default"
-            className="border-white/10 bg-black/25 text-slate-100"
+            className="border-slate-600/70 bg-[#0f1726] text-slate-100 placeholder:text-slate-500"
           />
         </label>
         <label className="grid gap-1.5">
-          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Extra CLI args</span>
+          <span className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Extra CLI args</span>
           <Textarea
             value={argsToText(config.extra_args)}
             onChange={(event) => onArgsChange(event.target.value)}
             placeholder={"One argument per line\ne.g. --include-directories\n../shared"}
             rows={3}
-            className="min-h-24 resize-none border-white/10 bg-black/25 text-slate-100"
+            className="min-h-24 resize-none border-slate-600/70 bg-[#0f1726] text-slate-100 placeholder:text-slate-500"
           />
         </label>
       </div>
-      <div className="mt-3 rounded-md border border-white/10 bg-black/40 p-2">
-        <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-slate-500">Preview</div>
-        <code className="block whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-400">
+      <div className="mt-3 rounded-md border border-slate-700/70 bg-[#0f1726] p-2">
+        <div className="mb-1 text-[10px] uppercase tracking-[0.16em] text-slate-400">Preview</div>
+        <code className="block whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-300">
           {commandPreview}
         </code>
       </div>
@@ -400,15 +400,15 @@ function CliSettingsView({
         if (!config) return null;
 
         return (
-          <section key={provider} className="rounded-lg border border-white/10 bg-black/25 p-3">
+          <section key={provider} className="rounded-lg border border-slate-700/70 bg-[#121a2a] p-3">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
-                <div className={`rounded-lg border border-white/10 bg-white/5 p-2.5 ${summary.accent}`}>
+                <div className={`rounded-lg border border-slate-600/70 bg-[#243044] p-2.5 ${summary.accent}`}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-slate-50">{getAgentLabel(provider)}</div>
-                  <div className="mt-1 text-xs text-slate-500">{summary.description}</div>
+                  <div className="mt-1 text-xs text-slate-400">{summary.description}</div>
                 </div>
               </div>
               {status ? <AgentStatusBadge status={status.status} /> : null}
@@ -575,12 +575,12 @@ export function SettingsModal({
     <Dialog open onOpenChange={(open) => { if (!open && !forceSetup) onClose(); }}>
       <DialogContent
         showCloseButton={!forceSetup}
-        className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-white/10 bg-[#050816]/95 p-0 shadow-[0_40px_120px_rgba(2,6,23,0.82)] sm:max-w-4xl"
+        className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-slate-700/70 bg-[#121a2a]/98 p-0 shadow-[0_32px_100px_rgba(2,6,23,0.62)] sm:max-w-4xl"
       >
         <div className="agent-bay-scanlines relative flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.09),transparent_35%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
 
-          <div className="relative border-b border-white/10 px-5 py-4 sm:px-6">
+          <div className="relative border-b border-slate-700/70 px-5 py-4 sm:px-6">
             <DialogHeader className="space-y-0 text-left">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -590,7 +590,7 @@ export function SettingsModal({
                   <DialogTitle className="mt-1 text-xl text-slate-50">
                     {view === "cli" ? "CLI settings" : onboarding ? "Choose your agents" : "Agent defaults"}
                   </DialogTitle>
-                  <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-400">
+                  <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-300">
                     {view === "cli"
                       ? "Set default models and CLI arguments for each provider."
                       : "Pick one provider for both roles, or split planning and execution when you need different agents."}
@@ -603,7 +603,7 @@ export function SettingsModal({
                       variant="outline"
                       onClick={() => setView("providers")}
                       disabled={isSaving}
-                      className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                      className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                     >
                       <ArrowLeft className="h-4 w-4" />
                       Agent defaults
@@ -614,7 +614,7 @@ export function SettingsModal({
                         variant="outline"
                         onClick={() => setView("cli")}
                         disabled={isSaving}
-                        className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                       >
                         <Settings className="h-4 w-4" />
                         CLI settings
@@ -623,7 +623,7 @@ export function SettingsModal({
                         variant="outline"
                         onClick={handleRefresh}
                         disabled={isRefreshing || isSaving}
-                        className="rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        className="rounded-lg border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
                       >
                         {isRefreshing ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -681,8 +681,8 @@ export function SettingsModal({
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Providers</div>
-                      <div className="mt-1 text-xs text-slate-500">Use one button for the normal setup, or split roles explicitly.</div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Providers</div>
+                      <div className="mt-1 text-xs text-slate-400">Use one button for the normal setup, or split roles explicitly.</div>
                     </div>
                   </div>
 
@@ -707,13 +707,13 @@ export function SettingsModal({
             )}
           </div>
 
-          <div className="relative flex flex-col-reverse gap-2 border-t border-white/10 bg-[#050816]/90 px-5 py-3 sm:flex-row sm:justify-end sm:px-6">
+          <div className="relative flex flex-col-reverse gap-2 border-t border-slate-700/70 bg-[#101827] px-5 py-3 sm:flex-row sm:justify-end sm:px-6">
             {onboarding ? (
               <Button
                 variant="ghost"
                 onClick={handleSkip}
                 disabled={isSaving}
-                className="rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-100"
+                className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
               >
                 Skip for now
               </Button>
@@ -722,7 +722,7 @@ export function SettingsModal({
                 variant="ghost"
                 onClick={onClose}
                 disabled={isSaving}
-                className="rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-100"
+                className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
               >
                 Cancel
               </Button>
