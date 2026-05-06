@@ -19,7 +19,7 @@ import {
   FieldLabel,
   FieldError,
 } from "@/components/ui/field";
-import { FolderOpen, PackagePlus, FolderCode, Bot, Sparkles, BrainCircuit } from "lucide-react";
+import { FolderOpen, PackagePlus, FolderCode, Bot, Sparkles, BrainCircuit, Orbit } from "lucide-react";
 
 interface ProjectModalProps {
   mode: "create" | "edit";
@@ -39,7 +39,7 @@ interface ProjectModalProps {
 }
 
 const DEFAULT_AGENT_TYPE = "claude_code";
-type ProjectAgentChoice = "default" | "claude_code" | "codex";
+type ProjectAgentChoice = "default" | "claude_code" | "codex" | "gemini";
 
 function defaultConfig(): AgentTypeConfig {
   return structuredClone(AGENT_TEMPLATES[DEFAULT_AGENT_TYPE].defaultConfig);
@@ -51,6 +51,7 @@ function resolveInitialAgentChoice(
 ): ProjectAgentChoice {
   if (!project) return "default";
   if (project.agent_type === "codex") return "codex";
+  if (project.agent_type === "gemini") return "gemini";
   return "claude_code";
 }
 
@@ -82,7 +83,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
       ? defaultExecutionAgent ?? null
       : agentChoice;
   if (!resolvedAgentType) {
-    errors.agentType = "Choose Claude Code, Codex, or configure a default execution agent in Agent Bay";
+    errors.agentType = "Choose Claude Code, Codex, Gemini, or configure a default execution agent in Agent Bay";
   }
   const canSave = Object.keys(errors).length === 0;
 
@@ -220,7 +221,7 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                 </span>
               </button>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setAgentChoice("claude_code")}
@@ -248,7 +249,22 @@ export function ProjectModal({ mode, project, defaultExecutionAgent, onSave, onC
                   <Bot className="h-4 w-4 shrink-0 text-emerald-300" />
                   <div>
                     <div className="text-sm font-medium text-slate-100">Codex</div>
-                    <div className="text-[11px] text-slate-500">Interactive terminal agent</div>
+                    <div className="text-[11px] text-slate-500">SDK-backed execution</div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgentChoice("gemini")}
+                  className={`flex items-center gap-2.5 rounded-xl border p-3 text-left transition-all ${
+                    agentChoice === "gemini"
+                      ? "border-amber-400/40 bg-amber-500/10 ring-1 ring-amber-400/30"
+                      : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <Orbit className="h-4 w-4 shrink-0 text-amber-200" />
+                  <div>
+                    <div className="text-sm font-medium text-slate-100">Gemini</div>
+                    <div className="text-[11px] text-slate-500">Headless execution</div>
                   </div>
                 </button>
               </div>

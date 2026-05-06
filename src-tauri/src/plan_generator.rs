@@ -279,7 +279,27 @@ fn build_planner_invocation(
                 schema_file: Some(schema_file),
             })
         }
-        AgentType::Gemini => Err("Gemini planning is coming soon.".to_string()),
+        AgentType::Gemini => {
+            let mut args = Vec::new();
+            args.push("--approval-mode".to_string());
+            args.push("plan".to_string());
+            args.push("--output-format".to_string());
+            args.push("json".to_string());
+            if let Some(m) = model {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+            args.push("--prompt".to_string());
+            args.push(full_prompt.to_string());
+
+            Ok(PlannerInvocation {
+                program: "gemini".to_string(),
+                args,
+                current_dir: PathBuf::from(repo_path),
+                output_file: None,
+                schema_file: None,
+            })
+        }
         AgentType::Custom => Err("Custom providers are not supported for planning.".to_string()),
     }
 }
@@ -417,6 +437,14 @@ pub async fn generate_plan(
                 if result_obj.is_object() {
                     let normalized = normalize_keys(result_obj.clone());
                     if let Ok(plan) = serde_json::from_value::<GeneratedPlan>(normalized) {
+                        return Ok(plan);
+                    }
+                }
+            }
+            // Gemini JSON output wraps the final text in a `response` field.
+            if let Some(response_str) = envelope.get("response").and_then(|v| v.as_str()) {
+                if let Some(inner_json) = extract_json_object(response_str) {
+                    if let Some(plan) = try_parse_plan(inner_json) {
                         return Ok(plan);
                     }
                 }
@@ -569,6 +597,27 @@ mod tests {
             .any(|arg| arg == "model_reasoning_effort=\"medium\""));
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
+    }
+
+    #[test]
+    fn planner_dispatch_builds_gemini_invocation() {
+        let invocation = build_planner_invocation(
+            &AgentType::Gemini,
+            "Plan this task",
+            Some("gemini-3-pro"),
+            "/tmp",
+        )
+        .expect("gemini invocation");
+
+        assert_eq!(invocation.program, "gemini");
+        assert!(invocation.args.iter().any(|arg| arg == "--prompt"));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--approval-mode", "plan"]));
+        assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
+        assert!(invocation.args.iter().any(|arg| arg == "json"));
+        assert!(invocation.output_file.is_none());
     }
 
     #[test]

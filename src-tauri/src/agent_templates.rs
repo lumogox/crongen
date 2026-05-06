@@ -1,12 +1,12 @@
 use crate::models::{
-    AgentType, AgentTypeConfig, AutoResponse, ClaudeCodeConfig, CodexConfig, ExecutionMode,
-    GeminiConfig, SdkExecution, ShellExecution,
+    AgentType, AgentTypeConfig, ClaudeCodeConfig, CodexConfig, ExecutionMode, GeminiConfig,
+    SdkExecution, ShellExecution,
 };
 
 /// Builds the execution mode for a given agent type and prompt.
 ///
-/// Claude Code and Codex use structured SDK mode.
-/// Gemini and custom agents stay on the PTY path.
+/// Claude Code, Codex, and Gemini use structured SDK mode.
+/// Custom agents stay on the PTY path.
 ///
 /// When `context` is provided (TOON-formatted execution context), it is
 /// prepended to the prompt/injection so the agent knows its place in the tree.
@@ -47,7 +47,7 @@ pub fn build_shell_command(
             build_codex_exec_command(&effective_prompt, cfg, default_model)
         }
         (AgentType::Gemini, AgentTypeConfig::Gemini(cfg)) => {
-            ExecutionMode::Pty(build_gemini_command(&effective_prompt, cfg, default_model))
+            build_gemini_headless_command(&effective_prompt, cfg, default_model)
         }
         (AgentType::Custom, AgentTypeConfig::Custom(cfg)) => {
             ExecutionMode::Pty(build_custom_command(&effective_prompt, cfg))
@@ -213,10 +213,6 @@ fn build_codex_exec_command(
     args.push("exec".to_string());
     args.push("--json".to_string());
 
-    if let Some(flag) = codex_approval_flag(cfg.approval_mode.as_deref()) {
-        args.push(flag.to_string());
-    }
-
     // Optional flags
     if let Some(model) = cfg.model.as_deref().or(default_model) {
         args.push("--model".to_string());
@@ -231,9 +227,9 @@ fn build_codex_exec_command(
         }
     }
 
-    if let Some(ref sandbox) = cfg.sandbox {
+    if let Some(sandbox) = codex_sandbox_mode(cfg) {
         args.push("--sandbox".to_string());
-        args.push(sandbox.clone());
+        args.push(sandbox.to_string());
     }
 
     if cfg.skip_git_check {
@@ -261,10 +257,6 @@ fn build_codex_interactive_command(
 ) -> ShellExecution {
     let mut args = Vec::new();
 
-    if let Some(flag) = codex_approval_flag(cfg.approval_mode.as_deref()) {
-        args.push(flag.to_string());
-    }
-
     if let Some(model) = cfg.model.as_deref().or(default_model) {
         args.push("--model".to_string());
         args.push(model.to_string());
@@ -278,9 +270,9 @@ fn build_codex_interactive_command(
         }
     }
 
-    if let Some(ref sandbox) = cfg.sandbox {
+    if let Some(sandbox) = codex_sandbox_mode(cfg) {
         args.push("--sandbox".to_string());
-        args.push(sandbox.clone());
+        args.push(sandbox.to_string());
     }
 
     if cfg.skip_git_check {
@@ -295,9 +287,13 @@ fn build_codex_interactive_command(
     }
 }
 
-fn codex_approval_flag(mode: Option<&str>) -> Option<&'static str> {
-    match mode.unwrap_or("full-auto") {
-        "full-auto" => Some("--full-auto"),
+fn codex_sandbox_mode(cfg: &CodexConfig) -> Option<&str> {
+    if let Some(sandbox) = cfg.sandbox.as_deref() {
+        return Some(sandbox);
+    }
+
+    match cfg.approval_mode.as_deref().unwrap_or("full-auto") {
+        "full-auto" => Some("workspace-write"),
         // Legacy values don't map 1:1 to the current Codex exec CLI.
         // Falling back to the CLI default keeps runtime and previews aligned.
         "suggest" | "auto-edit" | "default" | "" => None,
@@ -305,14 +301,13 @@ fn codex_approval_flag(mode: Option<&str>) -> Option<&'static str> {
     }
 }
 
-fn build_gemini_command(
+fn build_gemini_headless_command(
     prompt: &str,
     cfg: &GeminiConfig,
     default_model: Option<&str>,
-) -> ShellExecution {
+) -> ExecutionMode {
     let mut args = Vec::new();
 
-    // Interactive mode: auto-approve flag so the agent doesn't block on confirmations
     if cfg.yolo {
         args.push("--yolo".to_string());
     }
@@ -322,37 +317,24 @@ fn build_gemini_command(
         args.push(model.to_string());
     }
 
-    if let Some(ref sandbox) = cfg.sandbox {
+    if cfg
+        .sandbox
+        .as_deref()
+        .is_some_and(|value| value != "false" && value != "0")
+    {
         args.push("--sandbox".to_string());
-        args.push(sandbox.clone());
     }
 
-    ShellExecution {
+    args.push("--output-format".to_string());
+    args.push("stream-json".to_string());
+    args.push("--prompt".to_string());
+    args.push(String::new());
+
+    ExecutionMode::Sdk(SdkExecution {
         program: "gemini".to_string(),
         args,
-        // No stdin_injection — Gemini's MCP server init takes variable time,
-        // so a fixed delay is unreliable. Prompt is injected via auto-response
-        // when "Type your message" appears (= input is actually ready).
-        stdin_injection: None,
-        auto_responses: vec![
-            // Trust prompt: press Enter to select "Trust folder" (first option).
-            // This only appears on first run in a new folder.
-            AutoResponse {
-                pattern: "Do you trust this folder".to_string(),
-                response: "".to_string(),
-                delay_ms: 100,
-                submit: true,
-            },
-            // Input ready: inject the prompt when Gemini shows its input indicator.
-            // Fires once — covers both "already trusted" and "post-trust-restart".
-            AutoResponse {
-                pattern: "Type your message".to_string(),
-                response: prompt.to_string(),
-                delay_ms: 500,
-                submit: true,
-            },
-        ],
-    }
+        stdin_injection: Some(prompt.to_string()),
+    })
 }
 
 fn build_gemini_interactive_command(
@@ -370,9 +352,12 @@ fn build_gemini_interactive_command(
         args.push(model.to_string());
     }
 
-    if let Some(ref sandbox) = cfg.sandbox {
+    if cfg
+        .sandbox
+        .as_deref()
+        .is_some_and(|value| value != "false" && value != "0")
+    {
         args.push("--sandbox".to_string());
-        args.push(sandbox.clone());
     }
 
     ShellExecution {
@@ -443,7 +428,34 @@ mod tests {
     }
 
     #[test]
-    fn codex_exec_omits_full_auto_for_legacy_approval_modes() {
+    fn codex_exec_uses_workspace_write_for_full_auto_mode() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Review the branch",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: None,
+                sandbox: None,
+                approval_mode: Some("full-auto".to_string()),
+                skip_git_check: false,
+                json_output: false,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+
+        assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
+        assert!(sdk.args.iter().any(|arg| arg == "--sandbox"));
+        assert!(sdk.args.iter().any(|arg| arg == "workspace-write"));
+    }
+
+    #[test]
+    fn codex_exec_omits_sandbox_for_legacy_approval_modes() {
         let execution = build_shell_command(
             &AgentType::Codex,
             "Review the branch",
@@ -465,6 +477,7 @@ mod tests {
         };
 
         assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
+        assert!(!sdk.args.iter().any(|arg| arg == "--sandbox"));
     }
 
     #[test]
@@ -511,12 +524,42 @@ mod tests {
         );
 
         assert_eq!(shell.program, "codex");
-        assert!(shell.args.iter().any(|arg| arg == "--full-auto"));
+        assert!(!shell.args.iter().any(|arg| arg == "--full-auto"));
+        assert!(shell.args.iter().any(|arg| arg == "--sandbox"));
         assert!(shell.args.iter().any(|arg| arg == "--skip-git-repo-check"));
         assert!(shell.args.iter().any(|arg| arg == "-c"));
         assert!(shell
             .args
             .iter()
             .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+    }
+
+    #[test]
+    fn gemini_headless_uses_prompt_and_stream_json() {
+        let execution = build_shell_command(
+            &AgentType::Gemini,
+            "Implement the feature",
+            &AgentTypeConfig::Gemini(GeminiConfig {
+                model: Some("gemini-3-pro".to_string()),
+                sandbox: Some("true".to_string()),
+                yolo: true,
+            }),
+            None,
+            None,
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("gemini should use SDK execution"),
+        };
+
+        assert_eq!(sdk.program, "gemini");
+        assert!(sdk.args.iter().any(|arg| arg == "--prompt"));
+        assert_eq!(sdk.stdin_injection.as_deref(), Some("Implement the feature"));
+        assert!(sdk.args.iter().any(|arg| arg == "--output-format"));
+        assert!(sdk.args.iter().any(|arg| arg == "stream-json"));
+        assert!(sdk.args.iter().any(|arg| arg == "--yolo"));
+        assert!(sdk.args.iter().any(|arg| arg == "--sandbox"));
     }
 }

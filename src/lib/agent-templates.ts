@@ -19,8 +19,9 @@ export interface AgentTypeTemplate {
   buildCommandPreview: (prompt: string, config: AgentTypeConfig) => string;
 }
 
-function codexApprovalPreviewFlag(mode?: string | null): string | null {
-  return !mode || mode === "full-auto" ? "--full-auto" : null;
+function codexSandboxPreviewValue(config: CodexConfig): string | null {
+  if (config.sandbox) return config.sandbox;
+  return !config.approval_mode || config.approval_mode === "full-auto" ? "workspace-write" : null;
 }
 
 export const FAST_CODEX_MODEL = "gpt-5-codex-mini";
@@ -85,10 +86,9 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
   buildCommandPreview: (prompt, config) => {
     const cfg = config as CodexConfig;
     const parts = ["codex", "exec", "--json"];
-    const approvalFlag = codexApprovalPreviewFlag(cfg.approval_mode);
-    if (approvalFlag) parts.push(approvalFlag);
     if (cfg.model) parts.push("--model", cfg.model);
-    if (cfg.sandbox) parts.push("--sandbox", cfg.sandbox);
+    const sandbox = codexSandboxPreviewValue(cfg);
+    if (sandbox) parts.push("--sandbox", sandbox);
     if (cfg.skip_git_check) parts.push("--skip-git-repo-check");
     parts.push("-");
     return `printf %s ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
@@ -112,8 +112,10 @@ export const GEMINI_TEMPLATE: AgentTypeTemplate = {
     const parts = ["gemini"];
     if (cfg.yolo) parts.push("--yolo");
     if (cfg.model) parts.push("--model", cfg.model);
-    if (cfg.sandbox) parts.push("--sandbox", cfg.sandbox);
-    return `echo ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
+    if (cfg.sandbox && cfg.sandbox !== "false" && cfg.sandbox !== "0")
+      parts.push("--sandbox");
+    parts.push("--output-format", "stream-json", "--prompt", JSON.stringify(""));
+    return `printf %s ${JSON.stringify(prompt)} | ${parts.join(" ")}`;
   },
 };
 

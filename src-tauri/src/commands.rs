@@ -303,14 +303,57 @@ async fn get_provider_readiness(agent_type: &AgentType) -> AgentProviderReadines
                 ),
             }
         }
-        AgentType::Gemini => AgentProviderReadiness::new(
-            AgentType::Gemini,
-            AgentProviderStatus::ComingSoon,
-            Some("Gemini support is staged for a future release.".to_string()),
-            false,
-            false,
-            true,
-        ),
+        AgentType::Gemini => {
+            let executable = which::which("gemini");
+            if executable.is_err() {
+                return AgentProviderReadiness::new(
+                    AgentType::Gemini,
+                    AgentProviderStatus::MissingCli,
+                    Some("Install the `gemini` CLI and reopen Agent Bay.".to_string()),
+                    true,
+                    true,
+                    false,
+                );
+            }
+
+            match Command::new("gemini").arg("--version").output().await {
+                Ok(output) if output.status.success() => AgentProviderReadiness::new(
+                    AgentType::Gemini,
+                    AgentProviderStatus::Ready,
+                    Some(format!(
+                        "Gemini CLI is installed ({}). Authentication is checked by Gemini when a run starts.",
+                        String::from_utf8_lossy(&output.stdout).trim()
+                    )),
+                    true,
+                    true,
+                    false,
+                ),
+                Ok(output) => AgentProviderReadiness::new(
+                    AgentType::Gemini,
+                    AgentProviderStatus::Error,
+                    Some(format!(
+                        "Unexpected `gemini --version` response. {}{}",
+                        String::from_utf8_lossy(&output.stdout).trim(),
+                        if output.stderr.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(" {}", String::from_utf8_lossy(&output.stderr).trim())
+                        }
+                    )),
+                    true,
+                    true,
+                    false,
+                ),
+                Err(err) => AgentProviderReadiness::new(
+                    AgentType::Gemini,
+                    AgentProviderStatus::Error,
+                    Some(format!("Failed to run `gemini --version`: {err}")),
+                    true,
+                    true,
+                    false,
+                ),
+            }
+        }
         AgentType::Custom => AgentProviderReadiness::new(
             AgentType::Custom,
             AgentProviderStatus::Error,
@@ -419,7 +462,25 @@ fn build_merge_resolution_invocation(
                 output_file: Some(output_file),
             })
         }
-        AgentType::Gemini => Err("Gemini conflict auto-resolution is coming soon.".to_string()),
+        AgentType::Gemini => {
+            let mut args = vec![
+                "--yolo".to_string(),
+                "--output-format".to_string(),
+                "json".to_string(),
+            ];
+            if let Some(value) = model {
+                args.push("--model".to_string());
+                args.push(value.to_string());
+            }
+            args.push("--prompt".to_string());
+            args.push(prompt.to_string());
+
+            Ok(ResolutionInvocation {
+                program: "gemini".to_string(),
+                args,
+                output_file: None,
+            })
+        }
         AgentType::Custom => {
             Err("Custom shells do not support automatic merge conflict resolution.".to_string())
         }
@@ -429,9 +490,7 @@ fn build_merge_resolution_invocation(
 fn resolve_planning_agent(settings: &AppSettings) -> Result<AgentType, String> {
     match settings.planning_agent.clone() {
         Some(agent @ AgentType::ClaudeCode) | Some(agent @ AgentType::Codex) => Ok(agent),
-        Some(AgentType::Gemini) => {
-            Err("Gemini planning is coming soon. Choose Claude Code or Codex in Agent Bay.".to_string())
-        }
+        Some(agent @ AgentType::Gemini) => Ok(agent),
         Some(AgentType::Custom) => {
             Err("Custom providers are not supported for planning defaults. Choose Claude Code or Codex in Agent Bay.".to_string())
         }
@@ -2502,6 +2561,33 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+    }
+
+    #[test]
+    fn gemini_merge_resolution_uses_headless_json_prompt() {
+        let invocation = build_merge_resolution_invocation(
+            &AgentType::Gemini,
+            "/tmp",
+            "Resolve the merge",
+            Some("gemini-2.5-pro"),
+        )
+        .expect("gemini invocation");
+
+        assert_eq!(invocation.program, "gemini");
+        assert_eq!(invocation.output_file, None);
+        assert!(invocation.args.iter().any(|arg| arg == "--yolo"));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--output-format", "json"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--model", "gemini-2.5-pro"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--prompt", "Resolve the merge"]));
     }
 
     #[test]

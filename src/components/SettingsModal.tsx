@@ -115,7 +115,7 @@ function AgentStatusBadge({ status }: { status: AgentProviderReadiness["status"]
 }
 
 function canUseProviderForRole(provider: AgentType, status: AgentProviderReadiness | null, role: AgentRole) {
-  if (!status) return provider !== "gemini";
+  if (!status) return provider !== "custom";
   if (status.coming_soon) return false;
   return role === "planning" ? status.supports_planning : status.supports_execution;
 }

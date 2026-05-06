@@ -1,9 +1,9 @@
 import type { AgentType } from "../types";
 
 export function usesStructuredSession(agentType: AgentType): boolean {
-  return agentType === "claude_code" || agentType === "codex";
+  return agentType === "claude_code" || agentType === "codex" || agentType === "gemini";
 }
 
 export function usesPtySessionControls(agentType: AgentType): boolean {
-  return agentType === "gemini" || agentType === "custom";
+  return agentType === "custom";
 }

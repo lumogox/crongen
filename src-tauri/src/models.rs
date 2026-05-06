@@ -124,8 +124,8 @@ pub struct ClaudeCodeConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CodexConfig {
     pub model: Option<String>,
-    pub sandbox: Option<String>,       // "full", "network-only", "none"
-    pub approval_mode: Option<String>, // currently only "full-auto" maps to a dedicated CLI flag
+    pub sandbox: Option<String>,       // "read-only", "workspace-write", "danger-full-access"
+    pub approval_mode: Option<String>, // legacy UI mode; "full-auto" maps to workspace-write
     pub skip_git_check: bool,
     pub json_output: bool,
 }
