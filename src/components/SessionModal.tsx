@@ -80,7 +80,7 @@ export function SessionModal({
             mode === "quick"
               ? `Run a single ${executionAgentLabel} agent directly for the fastest path.`
               : mode === "manual"
-                ? "Design the execution tree manually, then run nodes when ready."
+                ? "Create the first runnable task, then add branches or follow-up nodes on the canvas."
                 : activeAgentLabel === "Unconfigured"
                   ? "Describe the task and connect a planning agent first."
                   : `Describe the task and ${planningAgentLabel} will generate a single-path execution plan.`
@@ -111,7 +111,7 @@ export function SessionModal({
               }`}
             >
               <PenLine className="h-3 w-3" />
-              Manual
+              Root task
             </button>
             {onGeneratePlan && (
               <button
@@ -167,18 +167,18 @@ export function SessionModal({
 
           {mode === "manual" && (
             <div className="space-y-2">
-              <Label>Name</Label>
+              <Label>Task name</Label>
               <Input
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="e.g. refactor-auth, add-tests"
+                placeholder="e.g. Refactor auth, Add tests"
                 autoFocus
               />
             </div>
           )}
           <div className="space-y-2">
             <Label>
-              {mode === "quick" ? "What do you need?" : mode === "generate" ? "Task description" : "Task prompt"}
+              {mode === "quick" ? "What do you need?" : mode === "generate" ? "Task description" : "Root task prompt"}
             </Label>
             <Textarea
               value={prompt}
@@ -188,11 +188,16 @@ export function SessionModal({
                   ? "e.g. Add undo/redo to the calculator using a history stack"
                   : mode === "generate"
                     ? `Describe the task in detail. ${planningAgentLabel} will break it down into a single execution chain.`
-                    : "What should the agent accomplish?"
+                    : "Describe what this root task should do when you run it."
               }
               rows={mode === "quick" ? 3 : mode === "generate" ? 6 : 4}
               autoFocus={mode !== "manual"}
             />
+            {mode === "manual" && (
+              <p className="text-xs leading-relaxed text-slate-400">
+                This prompt is sent to the execution agent when this task runs.
+              </p>
+            )}
           </div>
 
           {/* Complexity selector for plan generation */}
@@ -262,7 +267,7 @@ export function SessionModal({
               disabled={!label.trim() || !prompt.trim()}
               onClick={() => onConfirm(label.trim(), prompt.trim())}
             >
-              Create
+              Create task
             </Button>
           ) : (
             <Button
