@@ -4,38 +4,24 @@ import type {
   AgentRole,
   AgentType,
   AppSettings,
-  CodexModelCatalog,
-  CodexModelOption,
 } from "../types";
 import {
   BUILT_IN_AGENT_TYPES,
-  FAST_CODEX_MODEL,
   getAgentLabel,
 } from "../lib/agent-templates";
-import { getCodexModelCatalog } from "../lib/tauri-commands";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Bot,
   Brain,
-  CheckCircle2,
+  CircleDashed,
   Loader2,
-  Orbit,
   RefreshCw,
   Sparkles,
   TriangleAlert,
@@ -53,61 +39,49 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type ProviderTheme = {
+type ProviderSummary = {
   icon: typeof Brain;
-  tint: string;
-  surface: string;
-  ring: string;
   description: string;
-  chips: string[];
+  bestFor: string;
+  accent: string;
 };
 
-const PROVIDER_THEMES: Record<AgentType, ProviderTheme> = {
+const PROVIDER_SUMMARIES: Record<AgentType, ProviderSummary> = {
   claude_code: {
     icon: Brain,
-    tint: "text-violet-200",
-    surface: "from-violet-500/18 via-violet-500/6 to-transparent",
-    ring: "border-violet-400/30",
-    description: "Anthropic's coding agent with SDK-backed runs for stable task execution.",
-    chips: ["Planning", "Execution", "SDK"],
+    description: "Claude Code CLI",
+    bestFor: "Stable SDK-backed task work",
+    accent: "text-violet-200",
   },
   codex: {
     icon: Bot,
-    tint: "text-cyan-200",
-    surface: "from-cyan-500/18 via-sky-500/6 to-transparent",
-    ring: "border-cyan-400/30",
-    description: "OpenAI's coding agent with SDK-backed streaming runs, strong repo awareness, and a synced local model catalog.",
-    chips: ["Planning", "Execution", "SDK"],
+    description: "OpenAI Codex CLI",
+    bestFor: "Local SDK-backed task work",
+    accent: "text-cyan-200",
   },
   gemini: {
-    icon: Orbit,
-    tint: "text-amber-100",
-    surface: "from-amber-500/18 via-orange-500/6 to-transparent",
-    ring: "border-amber-400/30",
-    description: "Planned future adapter for Google's Gemini CLI. Visible here so the bay scales cleanly.",
-    chips: ["Future", "Coming soon"],
+    icon: Sparkles,
+    description: "Gemini CLI",
+    bestFor: "Planned future provider",
+    accent: "text-amber-100",
   },
   custom: {
-    icon: Sparkles,
-    tint: "text-slate-200",
-    surface: "from-white/10 via-white/5 to-transparent",
-    ring: "border-white/10",
-    description: "Custom providers are not part of Agent Bay defaults.",
-    chips: ["Custom"],
+    icon: CircleDashed,
+    description: "Project-specific command",
+    bestFor: "Configured on a project",
+    accent: "text-slate-200",
   },
 };
-
-const SLOW_CODEX_MODELS = new Set(["gpt-5.4", "gpt-5.4-mini"]);
 
 function statusTone(status: AgentProviderReadiness["status"]) {
   switch (status) {
     case "ready":
-      return "border-emerald-400/20 bg-emerald-500/10 text-emerald-200";
+      return "border-emerald-400/25 bg-emerald-500/10 text-emerald-200";
     case "needs_login":
-      return "border-amber-400/20 bg-amber-500/10 text-amber-100";
+      return "border-amber-400/25 bg-amber-500/10 text-amber-100";
     case "missing_cli":
     case "error":
-      return "border-rose-400/20 bg-rose-500/10 text-rose-100";
+      return "border-rose-400/25 bg-rose-500/10 text-rose-100";
     case "coming_soon":
       return "border-slate-400/20 bg-slate-500/10 text-slate-300";
     default:
@@ -134,228 +108,165 @@ function statusLabel(status: AgentProviderReadiness["status"]) {
 
 function AgentStatusBadge({ status }: { status: AgentProviderReadiness["status"] }) {
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${statusTone(status)}`}>
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${statusTone(status)}`}>
       {statusLabel(status)}
     </span>
   );
 }
 
-function RoleSocket({
+function canUseProviderForRole(provider: AgentType, status: AgentProviderReadiness | null, role: AgentRole) {
+  if (!status) return provider !== "gemini";
+  if (status.coming_soon) return false;
+  return role === "planning" ? status.supports_planning : status.supports_execution;
+}
+
+function providerHelpText(status: AgentProviderReadiness | null) {
+  if (!status) return "Validation unavailable right now; you can still choose it.";
+  if (status.status === "ready") return "Ready to use.";
+  return status.detail ?? statusLabel(status.status);
+}
+
+function CurrentRoleCard({
   role,
   focus,
   selectedAgent,
-  modelValue,
-  onModelChange,
   status,
-  codexCatalog,
-  codexCatalogError,
-  isCodexCatalogLoading,
 }: {
   role: AgentRole;
   focus: boolean;
   selectedAgent: AgentType | null | undefined;
-  modelValue: string;
-  onModelChange: (value: string) => void;
   status: AgentProviderReadiness | null;
-  codexCatalog: CodexModelCatalog | null;
-  codexCatalogError: string | null;
-  isCodexCatalogLoading: boolean;
 }) {
+  const Icon = role === "planning" ? Brain : Zap;
   const roleLabel = role === "planning" ? "Planning" : "Execution";
-  const roleDescription = role === "planning" ? "Task decomposition" : "Agent node runs";
-  const codexModel =
-    selectedAgent === "codex"
-      ? codexCatalog?.models.find((model) => model.slug === modelValue) ?? null
-      : null;
-  const hasCodexCatalog = selectedAgent === "codex" && (codexCatalog?.models.length ?? 0) > 0;
-  const [useManualCodexModel, setUseManualCodexModel] = useState(
-    Boolean(selectedAgent === "codex" && modelValue && !codexModel),
-  );
-
-  useEffect(() => {
-    if (selectedAgent !== "codex") {
-      setUseManualCodexModel(false);
-      return;
-    }
-
-    if (modelValue && !codexModel) {
-      setUseManualCodexModel(true);
-      return;
-    }
-
-    if (modelValue && codexModel) {
-      setUseManualCodexModel(false);
-    }
-  }, [codexModel, modelValue, selectedAgent]);
+  const roleDescription = role === "planning" ? "Breaks a task into a plan" : "Runs each work node";
 
   return (
     <div
-      className={`rounded-[1.4rem] border bg-black/30 p-4 transition-all ${
-        focus
-          ? "border-sky-400/35 shadow-[0_0_0_1px_rgba(56,189,248,0.18),0_18px_50px_rgba(14,165,233,0.12)]"
-          : "border-white/10"
+      className={`rounded-lg border bg-black/25 p-3 ${
+        focus ? "border-sky-400/50 shadow-[0_0_0_1px_rgba(56,189,248,0.2)]" : "border-white/10"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">{roleLabel}</div>
-          <div className="mt-1 text-sm font-medium text-slate-100">{getAgentLabel(selectedAgent)}</div>
-          <div className="mt-1 text-xs text-slate-500">{roleDescription}</div>
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-sky-200">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{roleLabel}</div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-50">
+              {selectedAgent ? getAgentLabel(selectedAgent) : "Choose an agent"}
+            </div>
+            <div className="mt-0.5 text-xs text-slate-500">{roleDescription}</div>
+          </div>
         </div>
-        {status ? <AgentStatusBadge status={status.status} /> : (
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-400">
-            Unset
+        {status ? (
+          <AgentStatusBadge status={status.status} />
+        ) : (
+          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+            {selectedAgent ? "Not validated" : "Unset"}
           </span>
         )}
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <label className="block text-[11px] uppercase tracking-[0.18em] text-slate-500">
-          Model override
-        </label>
-        {selectedAgent === "codex" ? (
-          <div className="space-y-2">
-            {isCodexCatalogLoading ? (
-              <div className="flex min-h-10 items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-slate-400">
-                <Loader2 className="h-4 w-4 animate-spin text-cyan-200" />
-                Syncing discovered Codex models
-              </div>
-            ) : hasCodexCatalog && !useManualCodexModel ? (
-              <Select
-                value={codexModel?.slug ?? "__default__"}
-                onValueChange={(value) => onModelChange(value === "__default__" ? "" : value)}
-              >
-                <SelectTrigger className="w-full rounded-xl border-white/10 bg-black/30 text-left text-slate-100 hover:bg-white/5">
-                  <SelectValue placeholder="Use Codex default model" />
-                </SelectTrigger>
-                <SelectContent className="border-white/10 bg-[#090d1a] text-slate-100">
-                  <SelectItem value="__default__">Use Codex default</SelectItem>
-                  <SelectSeparator className="bg-white/10" />
-                  {codexCatalog?.models.map((model) => (
-                    <SelectItem
-                      key={model.slug}
-                      value={model.slug}
-                      className="items-start py-2"
-                    >
-                      <span className="flex flex-col items-start gap-0.5">
-                        <span className="font-medium text-slate-100">{model.display_name}</span>
-                        <span className="text-xs text-slate-500">
-                          {model.description ?? model.slug}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                value={modelValue}
-                onChange={(event) => onModelChange(event.target.value)}
-                placeholder="Enter a Codex model slug"
-                className="border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600"
-              />
-            )}
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[11px] text-slate-500">
-                {codexCatalog
-                  ? `Synced from local Codex cache${codexCatalog.client_version ? ` v${codexCatalog.client_version}` : ""}.`
-                  : codexCatalogError
-                    ? "Codex cache unavailable. Manual slug entry still works."
-                    : "Use Codex's local catalog when available, or enter a manual slug."}
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {hasCodexCatalog ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (useManualCodexModel) {
-                        setUseManualCodexModel(false);
-                        if (!codexModel) {
-                          onModelChange("");
-                        }
-                        return;
-                      }
-                      setUseManualCodexModel(true);
-                    }}
-                    className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-300 transition-colors hover:bg-white/10"
-                  >
-                    {useManualCodexModel ? "Back to catalog" : "Use custom slug"}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUseManualCodexModel(true);
-                    onModelChange(FAST_CODEX_MODEL);
-                  }}
-                  className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100 transition-colors hover:bg-emerald-500/20"
-                >
-                  Use fast model
-                </button>
-              </div>
-            </div>
-
-            {codexModel ? (
-              <CodexModelHint model={codexModel} />
-            ) : modelValue ? (
-              <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                Using a manual Codex model slug that is not present in the local cache.
-              </div>
-            ) : null}
-
-            {SLOW_CODEX_MODELS.has(modelValue) && (
-              <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
-                This is a quality-first model. For short or routine tasks, the fast Codex model will feel much snappier.
-              </div>
-            )}
-
-            {modelValue === FAST_CODEX_MODEL && (
-              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
-                Fast Codex model selected. Best for simple tasks, quick iterations, and lower-latency runs.
-              </div>
-            )}
-          </div>
-        ) : (
-          <Input
-            value={modelValue}
-            onChange={(event) => onModelChange(event.target.value)}
-            placeholder={selectedAgent ? `${getAgentLabel(selectedAgent)} default` : "Select a provider below"}
-            className="border-white/10 bg-black/30 text-slate-100 placeholder:text-slate-600"
-          />
-        )}
-      </div>
-
-      <div className="mt-3 text-xs text-slate-500">
-        {status?.detail ?? "Select a provider below to wire this role."}
       </div>
     </div>
   );
 }
 
-function CodexModelHint({ model }: { model: CodexModelOption }) {
+function ProviderRow({
+  provider,
+  status,
+  selectedForPlanning,
+  selectedForExecution,
+  isSaving,
+  onUseBoth,
+  onUsePlanning,
+  onUseExecution,
+}: {
+  provider: AgentType;
+  status: AgentProviderReadiness | null;
+  selectedForPlanning: boolean;
+  selectedForExecution: boolean;
+  isSaving: boolean;
+  onUseBoth: () => void;
+  onUsePlanning: () => void;
+  onUseExecution: () => void;
+}) {
+  const summary = PROVIDER_SUMMARIES[provider];
+  const Icon = summary.icon;
+  const canPlan = canUseProviderForRole(provider, status, "planning");
+  const canExecute = canUseProviderForRole(provider, status, "execution");
+  const canUseBoth = canPlan && canExecute;
+  const selected = selectedForPlanning || selectedForExecution;
+  const selectedForBoth = selectedForPlanning && selectedForExecution;
+
   return (
-    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-3 py-2">
-      <div className="text-sm font-medium text-cyan-50">{model.display_name}</div>
-      <div className="mt-1 text-xs text-cyan-100/80">
-        {model.description ?? "Discovered from your local Codex installation."}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {model.default_reasoning_level ? (
-          <span className="rounded-full border border-cyan-300/20 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-cyan-100">
-            Default reasoning: {model.default_reasoning_level}
-          </span>
-        ) : null}
-        {model.supported_reasoning_levels.slice(0, 3).map((level) => (
-          <span
-            key={`${model.slug}-${level.effort}`}
-            className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-300"
+    <section
+      className={`rounded-lg border bg-black/25 p-3 transition-colors ${
+        selected ? "border-sky-400/40 bg-sky-500/5" : "border-white/10"
+      }`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className={`rounded-lg border border-white/10 bg-white/5 p-2.5 ${summary.accent}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="text-sm font-semibold text-slate-50">{getAgentLabel(provider)}</div>
+              {status ? <AgentStatusBadge status={status.status} /> : null}
+            </div>
+            <div className="mt-1 text-xs text-slate-400">{summary.description} · {summary.bestFor}</div>
+            <div className="mt-1 text-xs text-slate-500">{providerHelpText(status)}</div>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <Button
+            variant={canUseBoth ? "default" : "outline"}
+            size="sm"
+            disabled={!canUseBoth || isSaving}
+            onClick={onUseBoth}
+            className={
+              selectedForBoth
+                ? "rounded-lg border border-sky-300/60 bg-sky-400 text-slate-950 shadow-[0_0_0_1px_rgba(125,211,252,0.25)] hover:bg-sky-300"
+                : canUseBoth
+                ? "rounded-lg bg-sky-500 text-slate-950 hover:bg-sky-400"
+                : "rounded-lg border-white/10 bg-black/20 text-slate-500"
+            }
           >
-            {level.effort}
-          </span>
-        ))}
+            Use for both
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canPlan || isSaving}
+            onClick={onUsePlanning}
+            className={
+              selectedForPlanning
+                ? "rounded-lg border-sky-300/50 bg-sky-500/20 text-sky-50 shadow-[0_0_0_1px_rgba(125,211,252,0.18)] hover:bg-sky-500/25"
+                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10 disabled:text-slate-500"
+            }
+          >
+            <Brain className="h-3.5 w-3.5" />
+            Planning
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canExecute || isSaving}
+            onClick={onUseExecution}
+            className={
+              selectedForExecution
+                ? "rounded-lg border-emerald-300/50 bg-emerald-500/20 text-emerald-50 shadow-[0_0_0_1px_rgba(110,231,183,0.18)] hover:bg-emerald-500/25"
+                : "rounded-lg border-white/10 bg-black/20 text-slate-100 hover:bg-white/10 disabled:text-slate-500"
+            }
+          >
+            <Zap className="h-3.5 w-3.5" />
+            Execution
+          </Button>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -372,17 +283,10 @@ export function SettingsModal({
   const [draft, setDraft] = useState<AppSettings>(settings);
   const [isSaving, setIsSaving] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [codexCatalog, setCodexCatalog] = useState<CodexModelCatalog | null>(null);
-  const [codexCatalogError, setCodexCatalogError] = useState<string | null>(null);
-  const [isCodexCatalogLoading, setIsCodexCatalogLoading] = useState(false);
 
   useEffect(() => {
     setDraft(settings);
   }, [settings]);
-
-  useEffect(() => {
-    void refreshCodexCatalog();
-  }, []);
 
   const statusByType = useMemo(
     () => new Map(statuses.map((status) => [status.agent_type, status])),
@@ -394,18 +298,12 @@ export function SettingsModal({
   const hasRequiredDefaults = Boolean(draft.planning_agent && draft.execution_agent);
   const saveDisabled = isSaving || (onboarding && !hasRequiredDefaults);
 
-  async function refreshCodexCatalog() {
-    setIsCodexCatalogLoading(true);
-    try {
-      const catalog = await getCodexModelCatalog();
-      setCodexCatalog(catalog);
-      setCodexCatalogError(null);
-    } catch (error) {
-      setCodexCatalog(null);
-      setCodexCatalogError(String(error));
-    } finally {
-      setIsCodexCatalogLoading(false);
-    }
+  function useProviderForBoth(provider: AgentType) {
+    setDraft((current) => ({
+      ...current,
+      planning_agent: provider,
+      execution_agent: provider,
+    }));
   }
 
   async function handleSave() {
@@ -439,7 +337,7 @@ export function SettingsModal({
   async function handleRefresh() {
     setIsRefreshing(true);
     try {
-      await Promise.all([onRefreshStatuses(), refreshCodexCatalog()]);
+      await onRefreshStatuses();
     } finally {
       setIsRefreshing(false);
     }
@@ -449,25 +347,23 @@ export function SettingsModal({
     <Dialog open onOpenChange={(open) => { if (!open && !forceSetup) onClose(); }}>
       <DialogContent
         showCloseButton={!forceSetup}
-        className="agent-bay-shell max-w-[calc(100%-1.5rem)] border-white/10 bg-[#050816]/95 p-0 shadow-[0_40px_120px_rgba(2,6,23,0.82)] sm:max-w-5xl"
+        className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-white/10 bg-[#050816]/95 p-0 shadow-[0_40px_120px_rgba(2,6,23,0.82)] sm:max-w-4xl"
       >
-        <div className="agent-bay-scanlines relative overflow-hidden rounded-[1.35rem]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(14,165,233,0.12),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.12),transparent_32%)]" />
+        <div className="agent-bay-scanlines relative flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.09),transparent_35%)]" />
 
-          <div className="relative p-6 sm:p-7">
-            <DialogHeader className="space-y-3 text-left">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.26em] text-sky-300/80">
+          <div className="relative border-b border-white/10 px-5 py-4 sm:px-6">
+            <DialogHeader className="space-y-0 text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
                     Agent Bay
                   </div>
-                  <DialogTitle className="mt-2 text-2xl text-slate-50">
-                    {onboarding ? "Connect your first agent" : "Default provider cockpit"}
+                  <DialogTitle className="mt-1 text-xl text-slate-50">
+                    {onboarding ? "Choose your agents" : "Agent defaults"}
                   </DialogTitle>
-                  <DialogDescription className="mt-2 max-w-2xl text-sm text-slate-400">
-                    {onboarding
-                      ? "Pick a planning agent and an execution agent, validate them, and save your defaults before you start routing work."
-                      : "Choose which agent decomposes tasks and which agent new projects inherit for execution. Gemini stays visible here as the future slot."}
+                  <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-400">
+                    Pick one provider for both roles, or split planning and execution when you need different agents.
                   </DialogDescription>
                 </div>
 
@@ -475,7 +371,7 @@ export function SettingsModal({
                   variant="outline"
                   onClick={handleRefresh}
                   disabled={isRefreshing || isSaving}
-                  className="rounded-full border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="shrink-0 rounded-lg border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
                 >
                   {isRefreshing ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -485,216 +381,104 @@ export function SettingsModal({
                   Validate
                 </Button>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <RoleSocket
-                  role="planning"
-                  focus={focusRole === "planning"}
-                  selectedAgent={draft.planning_agent}
-                  modelValue={draft.planning_model ?? ""}
-                  onModelChange={(value) => setDraft((current) => ({ ...current, planning_model: value }))}
-                  status={planningStatus}
-                  codexCatalog={codexCatalog}
-                  codexCatalogError={codexCatalogError}
-                  isCodexCatalogLoading={isCodexCatalogLoading}
-                />
-                <RoleSocket
-                  role="execution"
-                  focus={focusRole === "execution"}
-                  selectedAgent={draft.execution_agent}
-                  modelValue={draft.execution_model ?? ""}
-                  onModelChange={(value) => setDraft((current) => ({ ...current, execution_model: value }))}
-                  status={executionStatus}
-                  codexCatalog={codexCatalog}
-                  codexCatalogError={codexCatalogError}
-                  isCodexCatalogLoading={isCodexCatalogLoading}
-                />
-              </div>
             </DialogHeader>
+          </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)]">
-              <div className="rounded-[1.2rem] border border-white/10 bg-black/25 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                      Diagnostics
-                    </div>
-                    <div className="mt-2 text-sm font-medium text-slate-100">Debug mode</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      Reveal reset controls on completed nodes and keep the TOON context viewer available.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDraft((current) => ({ ...current, debug_mode: !current.debug_mode }))}
-                    className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] transition-colors ${
-                      draft.debug_mode
-                        ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-                        : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"
-                    }`}
-                  >
-                    {draft.debug_mode ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-              </div>
-
-              {onboarding && !hasRequiredDefaults && (
-                <div className="rounded-[1.2rem] border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-                  <div className="flex items-start gap-2">
-                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div>
-                      <div className="font-medium text-amber-50">Choose both role defaults before saving</div>
-                      <div className="mt-1 text-xs text-amber-100/80">
-                        Save stays locked until planning and execution each have a selected provider. You can still skip for now and come back later.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+          <div className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CurrentRoleCard
+                role="planning"
+                focus={focusRole === "planning"}
+                selectedAgent={draft.planning_agent}
+                status={planningStatus}
+              />
+              <CurrentRoleCard
+                role="execution"
+                focus={focusRole === "execution"}
+                selectedAgent={draft.execution_agent}
+                status={executionStatus}
+              />
             </div>
 
-            <div className="mt-6 grid gap-3 lg:grid-cols-3">
-              {BUILT_IN_AGENT_TYPES.map((provider) => {
-                const theme = PROVIDER_THEMES[provider];
-                const status = statusByType.get(provider) ?? null;
-                const Icon = theme.icon;
-                const selectedForPlanning = draft.planning_agent === provider;
-                const selectedForExecution = draft.execution_agent === provider;
-                const disabled = status?.coming_soon || !status?.supports_planning && !status?.supports_execution;
-
-                return (
-                  <section
-                    key={provider}
-                    className={`relative overflow-hidden rounded-[1.45rem] border bg-gradient-to-br ${theme.surface} ${
-                      selectedForPlanning || selectedForExecution ? theme.ring : "border-white/10"
-                    }`}
-                  >
-                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),transparent_42%)]" />
-                    <div className="relative flex h-full flex-col p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`rounded-2xl border border-white/10 bg-black/30 p-2.5 ${theme.tint}`}>
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <div className="text-base font-semibold text-slate-50">{getAgentLabel(provider)}</div>
-                            <div className="mt-1 text-xs text-slate-500">{theme.description}</div>
-                          </div>
-                        </div>
-                        {status ? <AgentStatusBadge status={status.status} /> : null}
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {theme.chips.map((chip) => (
-                          <span
-                            key={chip}
-                            className="rounded-full border border-white/10 bg-black/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-slate-400"
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="mt-4 flex-1 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-slate-400">
-                        {status?.detail ?? "No validation details yet."}
-                      </div>
-
-                      {(selectedForPlanning || selectedForExecution) && (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {selectedForPlanning && (
-                            <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-sky-200">
-                              Planning selected
-                            </span>
-                          )}
-                          {selectedForExecution && (
-                            <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-emerald-200">
-                              Execution selected
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={disabled || isSaving}
-                          onClick={() => setDraft((current) => ({ ...current, planning_agent: provider }))}
-                          className="rounded-full border-white/10 bg-black/20 text-slate-100 hover:bg-white/10"
-                        >
-                          <Brain className="h-3.5 w-3.5" />
-                          Use for planning
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={disabled || isSaving}
-                          onClick={() => setDraft((current) => ({ ...current, execution_agent: provider }))}
-                          className="rounded-full border-white/10 bg-black/20 text-slate-100 hover:bg-white/10"
-                        >
-                          <Zap className="h-3.5 w-3.5" />
-                          Use for execution
-                        </Button>
-                      </div>
-
-                      {status?.status === "needs_login" && (
-                        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                          <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>Validate after you complete the provider's login flow.</span>
-                        </div>
-                      )}
-
-                      {status?.status === "ready" && (
-                        <div className="mt-3 flex items-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
-                          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                          <span>This provider is cleared for Agent Bay roles.</span>
-                        </div>
-                      )}
+            {onboarding && !hasRequiredDefaults ? (
+              <div className="mt-4 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                <div className="flex items-start gap-2">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <div className="font-medium text-amber-50">Choose planning and execution defaults to save.</div>
+                    <div className="mt-0.5 text-xs text-amber-100/80">
+                      Pick one provider for both roles, or assign planning and execution separately below.
                     </div>
-                  </section>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Providers</div>
+                  <div className="mt-1 text-xs text-slate-500">Use one button for the normal setup, or split roles explicitly.</div>
+                </div>
+              </div>
+
+              {BUILT_IN_AGENT_TYPES.map((provider) => {
+                const status = statusByType.get(provider) ?? null;
+                return (
+                  <ProviderRow
+                    key={provider}
+                    provider={provider}
+                    status={status}
+                    selectedForPlanning={draft.planning_agent === provider}
+                    selectedForExecution={draft.execution_agent === provider}
+                    isSaving={isSaving}
+                    onUseBoth={() => useProviderForBoth(provider)}
+                    onUsePlanning={() => setDraft((current) => ({ ...current, planning_agent: provider }))}
+                    onUseExecution={() => setDraft((current) => ({ ...current, execution_agent: provider }))}
+                  />
                 );
               })}
             </div>
+          </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              {onboarding ? (
-                <Button
-                  variant="ghost"
-                  onClick={handleSkip}
-                  disabled={isSaving}
-                  className="rounded-full text-slate-400 hover:bg-white/5 hover:text-slate-100"
-                >
-                  Skip for now
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  onClick={onClose}
-                  disabled={isSaving}
-                  className="rounded-full text-slate-400 hover:bg-white/5 hover:text-slate-100"
-                >
-                  Cancel
-                </Button>
-              )}
-
+          <div className="relative flex flex-col-reverse gap-2 border-t border-white/10 bg-[#050816]/90 px-5 py-3 sm:flex-row sm:justify-end sm:px-6">
+            {onboarding ? (
               <Button
-                onClick={handleSave}
-                disabled={saveDisabled}
-                className="rounded-full bg-sky-500 text-slate-950 hover:bg-sky-400"
+                variant="ghost"
+                onClick={handleSkip}
+                disabled={isSaving}
+                className="rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-100"
               >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Saving
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Save defaults
-                  </>
-                )}
+                Skip for now
               </Button>
-            </div>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={onClose}
+                disabled={isSaving}
+                className="rounded-lg text-slate-400 hover:bg-white/5 hover:text-slate-100"
+              >
+                Cancel
+              </Button>
+            )}
+
+            <Button
+              onClick={handleSave}
+              disabled={saveDisabled}
+              className="rounded-lg bg-sky-500 text-slate-950 hover:bg-sky-400"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Save defaults
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </DialogContent>
