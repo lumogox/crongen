@@ -581,14 +581,29 @@ export function SettingsModal({
         <div className="agent-bay-scanlines relative flex max-h-[calc(100vh-1.5rem)] w-full flex-col overflow-hidden rounded-lg">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
 
+          <div className="relative flex min-h-10 items-center justify-between border-b border-slate-700/70 px-5 sm:px-6">
+            <div className="text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
+              Agent Bay
+            </div>
+            {!forceSetup && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={onClose}
+                disabled={isSaving}
+                aria-label="Close Agent Bay"
+                className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+
           <div className="relative border-b border-slate-700/70 px-5 py-4 sm:px-6">
             <DialogHeader className="space-y-0 text-left">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
-                    Agent Bay
-                  </div>
-                  <DialogTitle className="mt-1 text-xl text-slate-50">
+                  <DialogTitle className="text-xl text-slate-50">
                     {view === "cli" ? "CLI settings" : onboarding ? "Choose your agents" : "Agent defaults"}
                   </DialogTitle>
                   <DialogDescription className="mt-1 max-w-2xl text-sm text-slate-300">
@@ -634,18 +649,6 @@ export function SettingsModal({
                         Validate
                       </Button>
                     </>
-                  )}
-                  {!forceSetup && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={onClose}
-                      disabled={isSaving}
-                      aria-label="Close Agent Bay"
-                      className="rounded-lg text-slate-300 hover:bg-[#243044] hover:text-slate-100"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
                   )}
                 </div>
               </div>
