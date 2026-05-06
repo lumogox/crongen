@@ -37,7 +37,7 @@ export function Sidebar({
       <div className="border-b border-white/10 px-4 pt-4 pb-3">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
-            Project
+            Projects
           </div>
           {onNewProject && (
             <button
@@ -45,18 +45,21 @@ export function Sidebar({
               className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200"
             >
               <Plus className="h-3 w-3" />
-              Add
+              Add folder
             </button>
           )}
         </div>
         {projects.length === 0 ? (
-          <div className="py-3 text-center">
-            <p className="text-xs text-slate-500">No projects yet</p>
+          <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-4 text-center">
+            <p className="text-xs font-medium text-slate-300">No project folders</p>
+            <p className="mt-1 text-[11px] leading-4 text-slate-500">
+              Start new or open existing code.
+            </p>
             <button
               onClick={onNewProject}
-              className="mt-2 text-xs text-sky-400 hover:text-sky-300 transition-colors"
+              className="mt-3 rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1 text-xs text-sky-200 transition-colors hover:bg-sky-400/15"
             >
-              Create your first project
+              Add project folder
             </button>
           </div>
         ) : (
@@ -122,7 +125,7 @@ export function Sidebar({
         )}
       </div>
       <div className="text-sm text-slate-500 px-5 mb-3">
-        {selectedProject ? "Execution flows" : "Select a project"}
+        {selectedProject ? "Execution flows" : "Choose a project folder"}
       </div>
 
       {/* Session list */}
@@ -130,9 +133,9 @@ export function Sidebar({
         {!selectedProject ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center px-6">
-              <p className="text-sm text-slate-400">No project selected</p>
+              <p className="text-sm text-slate-400">No project folder selected</p>
               <p className="text-xs text-slate-500 mt-1">
-                {projects.length === 0 ? "Create a project first" : "Choose a project above"}
+                {projects.length === 0 ? "Add a folder first" : "Choose a folder above"}
               </p>
             </div>
           </div>

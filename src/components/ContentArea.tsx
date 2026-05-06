@@ -494,10 +494,10 @@ function ContentAreaInner({
             <div className="flex flex-1 items-center justify-center rounded-[1.75rem] border border-white/10 bg-white/[0.03]">
               <div className="text-center">
                 <p className="text-sm text-slate-400">
-                  Select a project from the sidebar
+                  Choose a project folder from the sidebar
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  or create a new one to begin
+                  Start new or open existing code to begin
                 </p>
               </div>
             </div>
