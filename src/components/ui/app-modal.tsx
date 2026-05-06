@@ -41,7 +41,7 @@ function AppModalContent({
       {...props}
     >
       <div className={cn("flex max-h-[inherit] min-h-0 w-full flex-col overflow-hidden rounded-lg", shellClassName)}>
-        <div className="flex min-h-10 shrink-0 items-center justify-between gap-3 border-b border-slate-700/70 px-5 sm:px-6">
+        <div className="relative z-10 flex min-h-10 shrink-0 items-center justify-between gap-3 border-b border-slate-700/70 px-5 sm:px-6">
           <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
             {titleBarLabel}
           </div>

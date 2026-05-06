@@ -582,7 +582,7 @@ export function SettingsModal({
         className="agent-bay-shell flex max-h-[calc(100vh-1.5rem)] max-w-[calc(100vw-1.5rem)] overflow-hidden border-slate-700/70 bg-[#121a2a]/98 p-0 shadow-[0_32px_100px_rgba(2,6,23,0.62)] sm:max-w-4xl"
         shellClassName="agent-bay-scanlines relative max-h-[calc(100vh-1.5rem)]"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.08),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.05),transparent_35%)]" />
 
         <AppModalHeader
           className="relative"
