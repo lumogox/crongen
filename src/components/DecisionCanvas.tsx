@@ -135,9 +135,7 @@ export function DecisionCanvas({
               No execution tree yet
             </div>
             <div className="mt-2 text-xs text-slate-400">
-              Create a new task to start building an execution flow.
-              <br />
-              Then drag node types from the palette to design your tree.
+              The task is selected, but no nodes are available yet.
             </div>
           </div>
         </div>

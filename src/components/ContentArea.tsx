@@ -200,6 +200,8 @@ function ContentAreaInner({
     orchestratorStatus.state === "idle";
 
   const canContinue = hasPendingNodes && hasCompletedNodes && orchestratorIsIdle;
+  const hasSelectedSession = Boolean(selectedSessionId);
+  const hasCanvasNodes = treeNodes.length > 0;
 
   // ─── Session completion detection ──────────────────────────
   // A session is complete when: there are nodes, no runnable nodes are pending,
@@ -467,27 +469,48 @@ function ContentAreaInner({
               <CanvasToolbar
                 title={selectedProject.name}
                 subtitle={selectedProject.repo_path}
+                showAutoLayout={hasSelectedSession && hasCanvasNodes}
               />
-              <NodePalette flowMode={flowMode} />
+              {hasSelectedSession && hasCanvasNodes ? (
+                <NodePalette flowMode={flowMode} disabled={!selectedNodeId} />
+              ) : null}
               <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-slate-700/70" style={{ backgroundColor: "#111827" }}>
-                <DecisionCanvas
-                  treeNodes={treeNodes}
-                  allNodes={treeNodes}
-                  selectedNodeId={selectedNodeId}
-                  onSelectNode={onSelectNode}
-                  onForkNode={onForkNode}
-                  onMergeNode={onMergeNode}
-                  onCreateStructuralNode={onCreateStructuralNode}
-                  flowMode={flowMode}
-                  onRunNode={onRunNode}
-                  onUpdateNode={onUpdateNode}
-                  onDeleteNode={onDeleteNode}
-                  onOpenNodeTerminal={onOpenNodeTerminal}
-                  orchestratorCurrentNodeId={orchestratorStatus?.current_node_id}
-                  orchestratorActive={!!showOrchestratorActivity}
-                  debugMode={debugMode}
-                  onResetNode={onResetNode}
-                />
+                {!hasSelectedSession ? (
+                  <div className="flex h-full items-center justify-center">
+                    <div className="flex max-w-md flex-col items-center rounded-2xl border border-slate-700/70 bg-[#182235] px-6 py-5 text-center">
+                      <p className="text-sm font-medium text-slate-200">No task selected</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-400">
+                        Create a task to start an execution tree. Drag tools appear after a task exists.
+                      </p>
+                      <Button
+                        onClick={onCreateSession}
+                        className="mt-4 rounded-2xl bg-sky-500 text-slate-950 hover:bg-sky-400"
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        New task
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <DecisionCanvas
+                    treeNodes={treeNodes}
+                    allNodes={treeNodes}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={onSelectNode}
+                    onForkNode={onForkNode}
+                    onMergeNode={onMergeNode}
+                    onCreateStructuralNode={onCreateStructuralNode}
+                    flowMode={flowMode}
+                    onRunNode={onRunNode}
+                    onUpdateNode={onUpdateNode}
+                    onDeleteNode={onDeleteNode}
+                    onOpenNodeTerminal={onOpenNodeTerminal}
+                    orchestratorCurrentNodeId={orchestratorStatus?.current_node_id}
+                    orchestratorActive={!!showOrchestratorActivity}
+                    debugMode={debugMode}
+                    onResetNode={onResetNode}
+                  />
+                )}
               </div>
             </>
           ) : (

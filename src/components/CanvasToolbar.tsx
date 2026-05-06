@@ -5,11 +5,13 @@ import { Button } from "./ui/button";
 interface CanvasToolbarProps {
   title: string;
   subtitle?: string;
+  showAutoLayout?: boolean;
 }
 
 export function CanvasToolbar({
   title,
   subtitle,
+  showAutoLayout = true,
 }: CanvasToolbarProps) {
   const { fitView } = useReactFlow();
 
@@ -22,14 +24,16 @@ export function CanvasToolbar({
         )}
       </div>
 
-      <Button
-        variant="outline"
-        onClick={() => fitView({ padding: 0.22, duration: 200 })}
-        className="rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-      >
-        <LayoutGrid className="mr-2 h-4 w-4" />
-        Auto-layout
-      </Button>
+      {showAutoLayout && (
+        <Button
+          variant="outline"
+          onClick={() => fitView({ padding: 0.22, duration: 200 })}
+          className="rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+        >
+          <LayoutGrid className="mr-2 h-4 w-4" />
+          Auto-layout
+        </Button>
+      )}
     </div>
   );
 }
