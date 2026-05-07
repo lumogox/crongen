@@ -143,6 +143,13 @@ fn cleanup_output_file(output_file: Option<&PathBuf>) {
     }
 }
 
+fn codex_model_requires_default_retry(details: &str) -> bool {
+    let normalized = details.to_lowercase();
+    normalized.contains("requires a newer version of codex")
+        || normalized.contains("model requires a newer version")
+        || (normalized.contains("unsupported model") && normalized.contains("codex"))
+}
+
 fn write_plan_output_schema() -> Result<PathBuf, String> {
     let schema_file =
         std::env::temp_dir().join(format!("crongen-plan-schema-{}.json", uuid::Uuid::new_v4()));
@@ -345,6 +352,85 @@ fn append_extra_args(args: &mut Vec<String>, extra_args: &[String]) {
     );
 }
 
+async fn run_planner_invocation(
+    provider: &AgentType,
+    invocation: PlannerInvocation,
+) -> Result<String, String> {
+    let output_file = invocation.output_file.clone();
+    let schema_file = invocation.schema_file.clone();
+
+    let output = Command::new(&invocation.program)
+        .args(&invocation.args)
+        .current_dir(&invocation.current_dir)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn {}: {e}", invocation.program))?;
+
+    if !output.status.success() {
+        cleanup_output_file(output_file.as_ref());
+        cleanup_output_file(schema_file.as_ref());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let details = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
+        return Err(format!(
+            "{} exited with error: {details}",
+            planner_provider_name(provider)
+        ));
+    }
+
+    let raw_output = if let Some(output_file) = &output_file {
+        match fs::read_to_string(output_file) {
+            Ok(contents) => contents,
+            Err(err) => {
+                cleanup_output_file(Some(output_file));
+                cleanup_output_file(schema_file.as_ref());
+                return Err(format!("Failed to read planner output: {err}"));
+            }
+        }
+    } else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    cleanup_output_file(output_file.as_ref());
+    cleanup_output_file(schema_file.as_ref());
+
+    Ok(raw_output)
+}
+
+async fn run_planner(
+    provider: &AgentType,
+    full_prompt: &str,
+    model: Option<&str>,
+    extra_args: &[String],
+    repo_path: &str,
+) -> Result<String, String> {
+    let invocation = build_planner_invocation(provider, full_prompt, model, extra_args, repo_path)?;
+    let result = run_planner_invocation(provider, invocation).await;
+
+    if let Err(err) = &result {
+        if matches!(provider, AgentType::Codex)
+            && model.is_some()
+            && codex_model_requires_default_retry(err)
+        {
+            if let Some(model) = model {
+                log::warn!(
+                    "Codex planner model '{}' is unsupported by the installed Codex CLI; retrying with the Codex default model",
+                    model
+                );
+            }
+            let fallback_invocation =
+                build_planner_invocation(provider, full_prompt, None, extra_args, repo_path)?;
+            return run_planner_invocation(provider, fallback_invocation).await;
+        }
+    }
+
+    result
+}
+
 // ─── Key Normalization ──────────────────────────────────────────
 
 /// Recursively lowercase all object keys in a JSON value.
@@ -416,46 +502,7 @@ pub async fn generate_plan(
 ) -> Result<GeneratedPlan, String> {
     let system_prompt = planner_system_prompt(project_mode, complexity);
     let full_prompt = format!("{system_prompt}\n\nUser task: {prompt}");
-    let invocation =
-        build_planner_invocation(provider, &full_prompt, model, extra_args, repo_path)?;
-
-    let output = Command::new(&invocation.program)
-        .args(&invocation.args)
-        .current_dir(&invocation.current_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn {}: {e}", invocation.program))?;
-
-    if !output.status.success() {
-        cleanup_output_file(invocation.output_file.as_ref());
-        cleanup_output_file(invocation.schema_file.as_ref());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let details = if stderr.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            stderr.trim().to_string()
-        };
-        return Err(format!(
-            "{} exited with error: {details}",
-            planner_provider_name(provider)
-        ));
-    }
-
-    let raw_output = if let Some(output_file) = &invocation.output_file {
-        let contents = fs::read_to_string(output_file).map_err(|e| {
-            cleanup_output_file(Some(output_file));
-            cleanup_output_file(invocation.schema_file.as_ref());
-            format!("Failed to read planner output: {e}")
-        });
-        cleanup_output_file(Some(output_file));
-        let contents = contents?;
-        cleanup_output_file(invocation.schema_file.as_ref());
-        contents
-    } else {
-        cleanup_output_file(invocation.schema_file.as_ref());
-        String::from_utf8_lossy(&output.stdout).to_string()
-    };
+    let raw_output = run_planner(provider, &full_prompt, model, extra_args, repo_path).await?;
     let stdout = raw_output.as_str();
 
     // Strategy 1: Extract outermost JSON object using brace counting.
@@ -564,46 +611,7 @@ pub async fn refine_plan(
     let full_prompt = format!(
         "{REFINE_SYSTEM_PROMPT}\n\nProject mode: {project_mode}\n{mode_guidance}\n\nRefinement lenses: {lens_text}\n\nUser guidance:\n{guidance_text}\n\nCurrent flow JSON:\n{current_flow_json}"
     );
-    let invocation =
-        build_planner_invocation(provider, &full_prompt, model, extra_args, repo_path)?;
-
-    let output = Command::new(&invocation.program)
-        .args(&invocation.args)
-        .current_dir(&invocation.current_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn {}: {e}", invocation.program))?;
-
-    if !output.status.success() {
-        cleanup_output_file(invocation.output_file.as_ref());
-        cleanup_output_file(invocation.schema_file.as_ref());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let details = if stderr.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            stderr.trim().to_string()
-        };
-        return Err(format!(
-            "{} exited with error: {details}",
-            planner_provider_name(provider)
-        ));
-    }
-
-    let raw_output = if let Some(output_file) = &invocation.output_file {
-        let contents = fs::read_to_string(output_file).map_err(|e| {
-            cleanup_output_file(Some(output_file));
-            cleanup_output_file(invocation.schema_file.as_ref());
-            format!("Failed to read refined plan output: {e}")
-        });
-        cleanup_output_file(Some(output_file));
-        let contents = contents?;
-        cleanup_output_file(invocation.schema_file.as_ref());
-        contents
-    } else {
-        cleanup_output_file(invocation.schema_file.as_ref());
-        String::from_utf8_lossy(&output.stdout).to_string()
-    };
+    let raw_output = run_planner(provider, &full_prompt, model, extra_args, repo_path).await?;
 
     if let Some(json_str) = extract_json_object(&raw_output) {
         if let Some(plan) = try_parse_plan(json_str) {
@@ -748,7 +756,13 @@ pub fn plan_children_to_nodes(
     }
 
     for child in &plan.root.children {
-        visit(child, project_id, Some(parent_id.to_string()), now, &mut nodes);
+        visit(
+            child,
+            project_id,
+            Some(parent_id.to_string()),
+            now,
+            &mut nodes,
+        );
     }
 
     nodes
@@ -759,8 +773,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        build_planner_invocation, cleanup_output_file, normalize_plan_for_complexity,
-        plan_children_to_nodes, GeneratedPlan, PlanNode,
+        GeneratedPlan, PlanNode, build_planner_invocation, cleanup_output_file,
+        codex_model_requires_default_retry, normalize_plan_for_complexity, plan_children_to_nodes,
     };
     use crate::models::AgentType;
 
@@ -793,10 +807,12 @@ mod tests {
 
         assert_eq!(invocation.program, "codex");
         assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "--output-last-message"));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "--output-last-message")
+        );
         assert!(invocation.args.iter().any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
         cleanup_output_file(invocation.output_file.as_ref());
@@ -815,12 +831,24 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
+        );
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
+    }
+
+    #[test]
+    fn codex_model_requires_default_retry_detects_newer_cli_error() {
+        let details = "ERROR: {\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'gpt-5.5' model requires a newer version of Codex. Please upgrade to the latest app or CLI and try again.\"}}";
+
+        assert!(codex_model_requires_default_retry(details));
+        assert!(!codex_model_requires_default_retry(
+            "Codex exited with error: authentication failed"
+        ));
     }
 
     #[test]
@@ -836,14 +864,18 @@ mod tests {
 
         assert_eq!(invocation.program, "gemini");
         assert!(invocation.args.iter().any(|arg| arg == "--prompt"));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--approval-mode", "plan"]));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--include-directories", "../shared"]));
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--approval-mode", "plan"])
+        );
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--include-directories", "../shared"])
+        );
         assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
         assert!(invocation.args.iter().any(|arg| arg == "json"));
         assert!(invocation.output_file.is_none());
