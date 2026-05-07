@@ -10,6 +10,7 @@ import {
   X,
   RotateCcw,
   SquareTerminal,
+  Combine,
 } from "lucide-react";
 import type { AgentType, DecisionNodeData, NodeStatus } from "../types";
 import { getAgentLabel } from "../lib/agent-templates";
@@ -70,6 +71,7 @@ function ExecutionNodeInner({
     onMerge,
     onRunNode,
     onUpdateNodeAgent,
+    onUpdateNodeType,
     onDeleteNode,
     onOpenNodeTerminal,
     defaultExecutionAgent,
@@ -83,6 +85,10 @@ function ExecutionNodeInner({
   const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent;
   const canAssignAgent =
     ["task", "agent", "merge", "synthesis", "final"].includes(visualType) &&
+    node.status === "pending" &&
+    !node.worktree_path;
+  const canSwitchResolutionType =
+    (visualType === "merge" || visualType === "synthesis") &&
     node.status === "pending" &&
     !node.worktree_path;
 
@@ -107,6 +113,16 @@ function ExecutionNodeInner({
   const actions: { label: string; icon: React.ElementType; tone: string; onClick: () => void }[] = [];
 
   // Run button for any pending node (not yet executed)
+  if (canSwitchResolutionType) {
+    const nextType = visualType === "merge" ? "synthesis" : "merge";
+    actions.push({
+      label: visualType === "merge" ? "Synthesize" : "Compare",
+      icon: visualType === "merge" ? Combine : MergeIcon,
+      tone: "border-violet-400/30 bg-violet-500/10 text-violet-200 hover:bg-violet-500/20 hover:border-violet-400/50",
+      onClick: () => onUpdateNodeType(node.id, nextType),
+    });
+  }
+
   if (isPending && !node.worktree_path && visualType !== "decision") {
     actions.push({
       label: "Run",

@@ -514,6 +514,23 @@ pub fn node_update_content(conn: &Connection, id: &str, label: &str, prompt: &st
     Ok(())
 }
 
+pub fn node_update_type(
+    conn: &Connection,
+    id: &str,
+    node_type: &str,
+    branch_name: &str,
+) -> Result<()> {
+    let now = now_unix();
+    let rows = conn.execute(
+        "UPDATE decision_nodes SET node_type=?1, branch_name=?2, updated_at=?3 WHERE id=?4",
+        params![node_type, branch_name, now, id],
+    )?;
+    if rows == 0 {
+        anyhow::bail!("Decision node not found: {id}");
+    }
+    Ok(())
+}
+
 // ─── Orchestrator Session CRUD ──────────────────────────────────
 
 pub fn orchestrator_upsert(

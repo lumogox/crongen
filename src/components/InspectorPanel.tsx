@@ -41,6 +41,7 @@ interface InspectorPanelProps {
   onDelete?: (nodeId: string) => void;
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeType?: (nodeId: string, nodeType: "merge" | "synthesis") => void;
   onUpdateNodeAgent?: (nodeId: string, agentType: AgentType | null) => void;
   onValidateRuntime?: (nodeId: string) => void;
   onSendEnter?: (nodeId: string) => void;
@@ -84,6 +85,7 @@ export function InspectorPanel({
   onDelete,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeType,
   onUpdateNodeAgent,
   onValidateRuntime,
   onSendEnter,
@@ -111,6 +113,10 @@ export function InspectorPanel({
 
   const children = allNodes.filter((n) => n.parent_id === node.id);
   const isResolutionNode = visualType === "merge" || visualType === "synthesis" || node.status === "merged";
+  const canSwitchResolutionType =
+    (visualType === "merge" || visualType === "synthesis") &&
+    node.status === "pending" &&
+    !node.worktree_path;
   const isSessionRoot = node.parent_id === null;
   const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent ?? project.agent_type;
   const canAssignAgent = ["task", "agent", "merge", "synthesis", "final"].includes(visualType);
@@ -145,7 +151,25 @@ export function InspectorPanel({
         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
           <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
             <div className="text-xs text-slate-400">Type</div>
-            <div className="mt-1 text-slate-100">{typeMeta.label}</div>
+            <div className="mt-1 flex items-center justify-between gap-2 text-slate-100">
+              <span>{typeMeta.label}</span>
+              {canSwitchResolutionType && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!onUpdateNodeType}
+                  onClick={() => onUpdateNodeType?.(node.id, visualType === "merge" ? "synthesis" : "merge")}
+                  className="h-7 rounded-full border-slate-600/70 bg-[#0f1726] px-2 text-[11px] text-slate-100 hover:bg-[#243044]"
+                >
+                  {visualType === "merge" ? (
+                    <Combine className="mr-1.5 h-3 w-3" />
+                  ) : (
+                    <GitMerge className="mr-1.5 h-3 w-3" />
+                  )}
+                  {visualType === "merge" ? "Synthesize" : "Compare"}
+                </Button>
+              )}
+            </div>
           </div>
           <div className="rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
             <div className="text-xs text-slate-400">Project</div>

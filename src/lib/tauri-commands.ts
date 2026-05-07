@@ -139,6 +139,13 @@ export async function updateNode(
   return invoke("update_node", { nodeId, label, prompt });
 }
 
+export async function updateNodeType(
+  nodeId: string,
+  nodeType: "merge" | "synthesis",
+): Promise<DecisionNode> {
+  return invoke("update_node_type", { nodeId, nodeType });
+}
+
 export async function updateNodeAgent(
   nodeId: string,
   agentType: AgentType | null,

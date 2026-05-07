@@ -45,6 +45,7 @@ interface ContentAreaProps {
   onDeleteSession: (session: DecisionNode) => void;
   onRunNode: (nodeId: string) => void;
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeType: (nodeId: string, nodeType: "merge" | "synthesis") => void;
   onUpdateNodeAgent: (nodeId: string, agentType: AgentType | null) => void;
   orchestratorStatus: OrchestratorStatus | null;
   onStartOrchestrator?: (mode: OrchestratorMode) => void;
@@ -163,6 +164,7 @@ function ContentAreaInner({
   onDeleteSession,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeType,
   onUpdateNodeAgent,
   orchestratorStatus,
   onStartOrchestrator,
@@ -536,6 +538,7 @@ function ContentAreaInner({
                     flowMode={flowMode}
                     onRunNode={onRunNode}
                     onUpdateNode={onUpdateNode}
+                    onUpdateNodeType={onUpdateNodeType}
                     onUpdateNodeAgent={onUpdateNodeAgent}
                     onDeleteNode={onDeleteNode}
                     onOpenNodeTerminal={onOpenNodeTerminal}
@@ -592,6 +595,7 @@ function ContentAreaInner({
               onDelete={onDeleteNode}
               onRunNode={onRunNode}
               onUpdateNode={onUpdateNode}
+              onUpdateNodeType={onUpdateNodeType}
               onUpdateNodeAgent={onUpdateNodeAgent}
               onValidateRuntime={onValidateRuntime}
               onSendEnter={onSendEnterToNode}

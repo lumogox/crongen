@@ -18,6 +18,7 @@ interface UseTreeLayoutInput {
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeType?: (nodeId: string, nodeType: "merge" | "synthesis") => void;
   onUpdateNodeAgent?: (nodeId: string, agentType: AgentType | null) => void;
   onDeleteNode?: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
@@ -42,6 +43,7 @@ export function useTreeLayout({
   flowMode,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeType,
   onUpdateNodeAgent,
   onDeleteNode,
   onOpenNodeTerminal,
@@ -115,6 +117,7 @@ export function useTreeLayout({
           flowMode: flowMode ?? "branching",
           onRunNode: onRunNode ?? (() => {}),
           onUpdateNode: onUpdateNode ?? (() => {}),
+          onUpdateNodeType: onUpdateNodeType ?? (() => {}),
           onUpdateNodeAgent: onUpdateNodeAgent ?? (() => {}),
           onDeleteNode: onDeleteNode ?? (() => {}),
           onOpenNodeTerminal,
@@ -173,5 +176,5 @@ export function useTreeLayout({
     }
 
     return { flowNodes, flowEdges };
-  }, [nodes, selectedNodeId, ancestryPath, onFork, onMerge, onCreateStructuralNode, flowMode, onRunNode, onUpdateNode, onDeleteNode, onOpenNodeTerminal, orchestratorCurrentNodeId, debugMode, onResetNode]);
+  }, [nodes, selectedNodeId, ancestryPath, onFork, onMerge, onCreateStructuralNode, flowMode, onRunNode, onUpdateNode, onUpdateNodeType, onDeleteNode, onOpenNodeTerminal, orchestratorCurrentNodeId, debugMode, onResetNode]);
 }

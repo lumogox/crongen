@@ -46,6 +46,10 @@ fn is_valid_structural_node_type(node_type: &str) -> bool {
     VALID_STRUCTURAL_NODE_TYPES.contains(&node_type)
 }
 
+fn is_resolution_node_type(node_type: &str) -> bool {
+    matches!(node_type, "merge" | "synthesis")
+}
+
 #[derive(Debug, Serialize)]
 pub struct FeatureBranchResult {
     pub branch_name: String,
@@ -2021,6 +2025,39 @@ pub async fn update_node(
 }
 
 #[tauri::command]
+pub async fn update_node_type(
+    state: State<'_, AppState>,
+    node_id: String,
+    node_type: String,
+) -> Result<DecisionNode, String> {
+    if !is_resolution_node_type(&node_type) {
+        return Err("Only Compare and Synthesize node types can be selected here.".to_string());
+    }
+
+    let db = state.db.clone();
+    let nid = node_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let node = db::node_get_by_id(&conn, &nid).map_err(|e| format!("{e}"))?;
+        let current_type = node.node_type.as_deref().unwrap_or("agent");
+        if !is_resolution_node_type(current_type) {
+            return Err("Only Compare and Synthesize nodes can be switched.".to_string());
+        }
+        if node.status != NodeStatus::Pending || node.worktree_path.is_some() {
+            return Err(
+                "Only queued resolution nodes that have not started can be switched.".to_string(),
+            );
+        }
+
+        let branch_name = format!("structural/{}/{}", node_type, node.id);
+        db::node_update_type(&conn, &nid, &node_type, &branch_name).map_err(|e| format!("{e}"))?;
+        db::node_get_by_id(&conn, &nid).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))?
+}
+
+#[tauri::command]
 pub async fn update_node_agent(
     state: State<'_, AppState>,
     node_id: String,
@@ -3052,8 +3089,8 @@ pub async fn get_node_context(
 mod tests {
     use super::{
         build_merge_resolution_invocation, classify_codex_login_status, effective_node_agent,
-        is_valid_structural_node_type, parse_claude_auth_logged_in, parse_codex_model_catalog,
-        resolve_node_agent_config, role_requires_provider_validation,
+        is_resolution_node_type, is_valid_structural_node_type, parse_claude_auth_logged_in,
+        parse_codex_model_catalog, resolve_node_agent_config, role_requires_provider_validation,
     };
     use crate::models::{
         AgentCliConfigs, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
@@ -3102,6 +3139,14 @@ mod tests {
         assert!(is_valid_structural_node_type("synthesis"));
         assert!(is_valid_structural_node_type("merge"));
         assert!(!is_valid_structural_node_type("mix"));
+    }
+
+    #[test]
+    fn node_type_switching_is_limited_to_resolution_nodes() {
+        assert!(is_resolution_node_type("merge"));
+        assert!(is_resolution_node_type("synthesis"));
+        assert!(!is_resolution_node_type("agent"));
+        assert!(!is_resolution_node_type("final"));
     }
 
     #[test]

@@ -35,6 +35,7 @@ import {
   createRootNode,
   runNode,
   updateNode,
+  updateNodeType,
   updateNodeAgent,
   getRootNodes,
   startOrchestrator,
@@ -934,6 +935,19 @@ function App() {
     [applyUpdatedNode],
   );
 
+  const handleUpdateNodeType = useCallback(
+    async (nodeId: string, nodeType: "merge" | "synthesis") => {
+      try {
+        const updated = await updateNodeType(nodeId, nodeType);
+        applyUpdatedNode(updated);
+        setSuccess(`Node type changed to ${nodeType === "merge" ? "Compare" : "Synthesize"}.`);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [applyUpdatedNode],
+  );
+
   const handleUpdateNodeAgent = useCallback(
     async (nodeId: string, agentType: AgentType | null) => {
       try {
@@ -1278,6 +1292,7 @@ function App() {
             onDeleteSession={handleDeleteSession}
             onRunNode={handleRunNode}
             onUpdateNode={handleUpdateNode}
+            onUpdateNodeType={handleUpdateNodeType}
             onUpdateNodeAgent={handleUpdateNodeAgent}
             orchestratorStatus={orchestratorStatus}
             onStartOrchestrator={handleStartOrchestrator}
