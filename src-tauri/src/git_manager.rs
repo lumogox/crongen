@@ -427,11 +427,72 @@ pub fn get_branch_diff(
 
 // ─── Auto-commit ─────────────────────────────────────────────
 
+const DEFAULT_AUTO_COMMIT_MESSAGE: &str = "chore: capture uncommitted agent changes";
+
+pub fn agent_commit_message(node_type: Option<&str>, label: &str, prompt: &str) -> String {
+    let prefix = match node_type {
+        Some("validation") => "test",
+        Some("merge") => "chore",
+        Some("final") => "chore",
+        Some("task") | Some("agent") | _ => "feat",
+    };
+    let subject_source = prompt
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .filter(|line| line.len() <= 96)
+        .unwrap_or(label);
+    let subject = clean_commit_subject(subject_source);
+
+    if subject.is_empty() {
+        DEFAULT_AUTO_COMMIT_MESSAGE.to_string()
+    } else {
+        format!("{prefix}: {subject}")
+    }
+}
+
+fn clean_commit_subject(input: &str) -> String {
+    let mut subject = input
+        .split(['\n', '\r'])
+        .next()
+        .unwrap_or_default()
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_matches(['"', '\'', '`'])
+        .trim()
+        .to_string();
+
+    subject = subject
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(['.', ':', ';', ',', '-'])
+        .trim()
+        .to_string();
+
+    if subject.len() > 72 {
+        subject.truncate(72);
+        subject = subject
+            .trim_end()
+            .trim_matches(['.', ':', ';', ',', '-'])
+            .to_string();
+    }
+
+    if let Some(first) = subject.chars().next() {
+        let lower = first.to_lowercase().to_string();
+        subject.replace_range(0..first.len_utf8(), &lower);
+    }
+
+    subject
+}
+
 /// Commit any uncommitted changes in a worktree.
 /// Agents don't always commit their work before exiting, so this ensures
 /// all changes are captured on the branch before merging.
 /// Returns true if a commit was created, false if the worktree was clean.
-pub fn auto_commit_worktree(worktree_path: &str) -> Result<bool> {
+pub fn auto_commit_worktree_with_message(worktree_path: &str, message: &str) -> Result<bool> {
     // Check if there are any changes (staged, unstaged, or untracked)
     let status = Command::new("git")
         .current_dir(worktree_path)
@@ -464,11 +525,7 @@ pub fn auto_commit_worktree(worktree_path: &str) -> Result<bool> {
     // Commit with a descriptive message
     let commit = Command::new("git")
         .current_dir(worktree_path)
-        .args([
-            "commit",
-            "-m",
-            "Auto-commit agent work (uncommitted changes captured by crongen)",
-        ])
+        .args(["commit", "-m", message])
         .output()
         .context("Failed to commit in worktree")?;
 
@@ -760,8 +817,8 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_crongen_worktrees, cleanup_worktrees, create_branch_at_and_checkout,
-        get_current_commit, validate_feature_branch_name,
+        agent_commit_message, cleanup_crongen_worktrees, cleanup_worktrees,
+        create_branch_at_and_checkout, get_current_commit, validate_feature_branch_name,
     };
     use std::{fs, path::PathBuf, process::Command};
 
@@ -783,6 +840,36 @@ mod tests {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+    }
+
+    #[test]
+    fn agent_commit_message_uses_node_prompt_context() {
+        let message = agent_commit_message(
+            Some("agent"),
+            "GPU-Friendly",
+            "Enhance the existing scene with GPU-friendly weather effects. Keep it fast.",
+        );
+
+        assert_eq!(
+            message,
+            "feat: enhance the existing scene with GPU-friendly weather effects"
+        );
+    }
+
+    #[test]
+    fn agent_commit_message_uses_structural_prefixes() {
+        assert_eq!(
+            agent_commit_message(
+                Some("merge"),
+                "Compare options",
+                "Choose the best weather path"
+            ),
+            "chore: choose the best weather path"
+        );
+        assert_eq!(
+            agent_commit_message(Some("validation"), "Validate build", "Run npm test"),
+            "test: run npm test"
+        );
     }
 
     #[test]

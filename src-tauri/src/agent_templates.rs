@@ -39,6 +39,12 @@ pub fn build_shell_command(
         );
     }
 
+    if !matches!(node_type, Some("validation")) {
+        effective_prompt.push_str(
+            "\n\nBefore finishing: if you changed files, create a git commit with a concise message that explains the actual change. Do not use generic messages like \"auto commit\" or \"agent work\".",
+        );
+    }
+
     match (agent_type, config) {
         (AgentType::ClaudeCode, AgentTypeConfig::ClaudeCode(cfg)) => {
             build_claude_code_command(&effective_prompt, cfg, default_model)
@@ -437,10 +443,9 @@ mod tests {
         assert!(sdk.args.iter().any(|arg| arg == "--json"));
         assert!(sdk.args.iter().any(|arg| arg == "--skip-git-repo-check"));
         assert_eq!(sdk.args.last().map(String::as_str), Some("-"));
-        assert_eq!(
-            sdk.stdin_injection.as_deref(),
-            Some("Implement the feature")
-        );
+        let stdin = sdk.stdin_injection.as_deref().expect("stdin prompt");
+        assert!(stdin.starts_with("Implement the feature"));
+        assert!(stdin.contains("create a git commit with a concise message"));
     }
 
     #[test]
@@ -605,10 +610,9 @@ mod tests {
 
         assert_eq!(sdk.program, "gemini");
         assert!(sdk.args.iter().any(|arg| arg == "--prompt"));
-        assert_eq!(
-            sdk.stdin_injection.as_deref(),
-            Some("Implement the feature")
-        );
+        let stdin = sdk.stdin_injection.as_deref().expect("stdin prompt");
+        assert!(stdin.starts_with("Implement the feature"));
+        assert!(stdin.contains("create a git commit with a concise message"));
         assert!(sdk.args.iter().any(|arg| arg == "--output-format"));
         assert!(sdk.args.iter().any(|arg| arg == "stream-json"));
         assert!(sdk.args.iter().any(|arg| arg == "--yolo"));

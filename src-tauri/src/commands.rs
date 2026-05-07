@@ -1392,8 +1392,13 @@ pub async fn merge_node_branch(
             let wt = wt_path.clone();
             let db_commit = db2.clone();
             let nid_commit = node_id.clone();
+            let commit_message = git_manager::agent_commit_message(
+                node.node_type.as_deref(),
+                &node.label,
+                &node.prompt,
+            );
             tokio::task::spawn_blocking(move || {
-                match git_manager::auto_commit_worktree(&wt) {
+                match git_manager::auto_commit_worktree_with_message(&wt, &commit_message) {
                     Ok(true) => {
                         // Update commit_hash in DB since we just created a new commit
                         if let Ok(hash) = git_manager::get_current_commit(&wt) {
@@ -2979,7 +2984,13 @@ pub async fn create_feature_branch(
 
         if let Some(worktree_path) = node.worktree_path.as_deref() {
             if std::path::Path::new(worktree_path).exists() {
-                git_manager::auto_commit_worktree(worktree_path).map_err(|e| format!("{e}"))?;
+                let commit_message = git_manager::agent_commit_message(
+                    node.node_type.as_deref(),
+                    &node.label,
+                    &node.prompt,
+                );
+                git_manager::auto_commit_worktree_with_message(worktree_path, &commit_message)
+                    .map_err(|e| format!("{e}"))?;
                 commit =
                     git_manager::get_current_commit(worktree_path).map_err(|e| format!("{e}"))?;
                 db::node_update_commit(&conn, &node_id, &commit).map_err(|e| format!("{e}"))?;

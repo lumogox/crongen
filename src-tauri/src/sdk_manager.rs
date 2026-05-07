@@ -248,7 +248,23 @@ impl SdkManager {
 
             // Auto-commit any uncommitted agent work, then capture the final hash.
             // Agents don't always commit their changes before exiting.
-            match crate::git_manager::auto_commit_worktree(&worktree_path) {
+            let commit_message = {
+                let conn = db_reader.lock().ok();
+                conn.and_then(|conn| {
+                    let node = crate::db::node_get_by_id(&conn, &nid).ok()?;
+                    Some(crate::git_manager::agent_commit_message(
+                        node.node_type.as_deref(),
+                        &node.label,
+                        &node.prompt,
+                    ))
+                })
+            };
+            match crate::git_manager::auto_commit_worktree_with_message(
+                &worktree_path,
+                commit_message
+                    .as_deref()
+                    .unwrap_or("chore: capture uncommitted agent changes"),
+            ) {
                 Ok(committed) => {
                     if committed {
                         log::info!("Auto-committed uncommitted work for node {}", nid);
