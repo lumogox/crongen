@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   GitFork,
   GitMerge,
+  Combine,
   Pause,
   Play,
   RefreshCw,
@@ -104,15 +105,15 @@ export function InspectorPanel({
   const canPause = node.status === "running";
   const canResume = node.status === "paused";
   const canDelete = node.status !== "running";
-  const isStructural = ["decision", "merge", "final"].includes(visualType);
+  const isStructural = ["decision", "merge", "synthesis", "final"].includes(visualType);
 
   const tabs: InspectorTab[] = ["Overview", "Session", "Actions"];
 
   const children = allNodes.filter((n) => n.parent_id === node.id);
-  const isMergeNode = visualType === "merge" || node.status === "merged";
+  const isResolutionNode = visualType === "merge" || visualType === "synthesis" || node.status === "merged";
   const isSessionRoot = node.parent_id === null;
   const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent ?? project.agent_type;
-  const canAssignAgent = ["task", "agent", "merge", "final"].includes(visualType);
+  const canAssignAgent = ["task", "agent", "merge", "synthesis", "final"].includes(visualType);
   const assignableAgents: AgentType[] = ["claude_code", "codex", "gemini"];
 
   return (
@@ -296,15 +297,16 @@ export function InspectorPanel({
               </div>
             )}
 
-            {/* Merge summary card */}
-            {isMergeNode && children.length > 0 && (
+            {/* Resolution summary card */}
+            {isResolutionNode && children.length > 0 && (
               <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
                 <div className="text-sm font-medium text-violet-100">
-                  Merge review
+                  {visualType === "synthesis" ? "Synthesis review" : "Compare review"}
                 </div>
                 <div className="mt-2 text-sm leading-6 text-slate-300">
-                  Compare branches and choose the winner or combine the best
-                  parts.
+                  {visualType === "synthesis"
+                    ? "Combine useful work from sibling branches into one stronger result."
+                    : "Compare branches and choose the single best result."}
                 </div>
                 <div className="mt-4 grid gap-2 text-sm">
                   {children.map((child) => (
@@ -423,14 +425,24 @@ export function InspectorPanel({
                     Add work step
                   </Button>
                   {flowMode !== "linear" && (
-                    <Button
-                      variant="outline"
-                      onClick={() => onCreateStructuralNode?.(node.id, "merge")}
-                      className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
-                    >
-                      <GitMerge className="mr-2 h-4 w-4" />
-                      Add compare step
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => onCreateStructuralNode?.(node.id, "merge")}
+                        className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                      >
+                        <GitMerge className="mr-2 h-4 w-4" />
+                        Add compare step
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => onCreateStructuralNode?.(node.id, "synthesis")}
+                        className="justify-start rounded-2xl border-slate-600/70 bg-[#182235] text-slate-100 hover:bg-[#243044]"
+                      >
+                        <Combine className="mr-2 h-4 w-4" />
+                        Add synthesize step
+                      </Button>
+                    </>
                   )}
                   {node.status === "completed" && (
                     <Button
@@ -444,8 +456,8 @@ export function InspectorPanel({
                   )}
                 </>
               )}
-              {/* Merge (pending): Add final */}
-              {visualType === "merge" && node.status === "pending" && (
+              {/* Resolution (pending): Add final */}
+              {(visualType === "merge" || visualType === "synthesis") && node.status === "pending" && (
                 <Button
                   variant="outline"
                   onClick={() => onCreateStructuralNode?.(node.id, "final")}
@@ -455,7 +467,7 @@ export function InspectorPanel({
                   Add finish step
                 </Button>
               )}
-              {["task", "agent", "merge", "final"].includes(visualType) && (
+              {["task", "agent", "merge", "synthesis", "final"].includes(visualType) && (
                 <Button
                   variant="outline"
                   onClick={() => onCreateStructuralNode?.(node.id, "validation")}

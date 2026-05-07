@@ -227,7 +227,7 @@ export function SessionModal({
                   }`}
                 >
                   <div className="text-xs font-medium text-slate-100">Branching</div>
-                  <div className="text-[11px] text-slate-400">Compare approaches, then merge</div>
+                  <div className="text-[11px] text-slate-400">Compare or synthesize approaches</div>
                 </button>
               </div>
             </div>

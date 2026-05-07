@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, GitFork, GitMerge, Sparkles, Trophy } from "lucide-react";
+import { Bot, CheckCircle2, Combine, GitFork, GitMerge, Sparkles, Trophy } from "lucide-react";
 import type { DecisionNode } from "../types";
 import type { PaletteActionType, StructuralNodeType, VisualNodeType } from "../types/node-types";
 import { useDnd } from "./DndContext";
@@ -15,6 +15,7 @@ const paletteItems: {
   { type: "validation", label: "Validate", group: "Run", icon: CheckCircle2 },
   { type: "decision", label: "Decision", group: "Branch", icon: GitFork },
   { type: "merge", label: "Compare", group: "Resolve", icon: GitMerge },
+  { type: "synthesis", label: "Synthesize", group: "Resolve", icon: Combine },
   { type: "final", label: "Finish", group: "Resolve", icon: Trophy },
 ];
 
@@ -28,8 +29,9 @@ interface NodePaletteProps {
 const allowedByType: Record<VisualNodeType, PaletteActionType[]> = {
   task: ["plan", "agent", "decision", "validation"],
   decision: ["agent"],
-  agent: ["plan", "agent", "decision", "merge", "validation"],
+  agent: ["plan", "agent", "decision", "merge", "synthesis", "validation"],
   merge: ["final", "validation"],
+  synthesis: ["final", "validation"],
   final: ["validation"],
   validation: ["agent"],
 };
@@ -45,7 +47,8 @@ function disabledReason(
     case "decision":
       return "Decision nodes only accept approach work steps.";
     case "merge":
-      return "Compare nodes can only be followed by finish or validation steps.";
+    case "synthesis":
+      return "Resolution nodes can only be followed by finish or validation steps.";
     case "final":
       return "Finished work can only be validated.";
     case "validation":

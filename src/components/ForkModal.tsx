@@ -53,10 +53,17 @@ const modeConfig: Record<
   },
   merge: {
     title: "Add Compare Step",
-    description: "A convergence step that compares sibling branches and chooses or combines the best result.",
+    description: "A convergence step that compares sibling branches and picks the single best result.",
     confirmLabel: "Create",
     textLabel: "Comparison criteria",
-    textPlaceholder: "How should branches be compared? e.g. 'Compare test coverage and code quality'",
+    textPlaceholder: "How should the winning branch be chosen? e.g. 'Prioritize test coverage and maintainability'",
+  },
+  synthesis: {
+    title: "Add Synthesize Step",
+    description: "A convergence step that combines useful parts from sibling branches into one better result.",
+    confirmLabel: "Create",
+    textLabel: "Synthesis criteria",
+    textPlaceholder: "What should be combined? e.g. 'Keep the safer architecture and the stronger UI polish'",
   },
   final: {
     title: "Add Finish Step",
@@ -81,6 +88,27 @@ interface ForkModalProps {
   onClose: () => void;
 }
 
+function defaultNodeLabel(parentLabel: string, mode: ForkModalMode): string {
+  switch (mode) {
+    case "agent":
+      return `${parentLabel}-agent`;
+    case "fork":
+      return `${parentLabel}-fork`;
+    case "decision":
+      return `${parentLabel}-decision`;
+    case "merge":
+      return `${parentLabel}-compare`;
+    case "synthesis":
+      return `${parentLabel}-synthesize`;
+    case "final":
+      return `${parentLabel}-final`;
+    case "validation":
+      return `${parentLabel}-validate`;
+    default:
+      return `${parentLabel}-task`;
+  }
+}
+
 export function ForkModal({
   parentNode,
   mode = "fork",
@@ -88,20 +116,7 @@ export function ForkModal({
   onClose,
 }: ForkModalProps) {
   const config = modeConfig[mode];
-  const defaultLabel =
-    mode === "agent"
-      ? `${parentNode.label}-agent`
-      : mode === "fork"
-        ? `${parentNode.label}-fork`
-        : mode === "decision"
-          ? `${parentNode.label}-decision`
-            : mode === "merge"
-              ? `${parentNode.label}-review`
-            : mode === "final"
-              ? `${parentNode.label}-final`
-              : mode === "validation"
-                ? `${parentNode.label}-validate`
-                : `${parentNode.label}-task`;
+  const defaultLabel = defaultNodeLabel(parentNode.label, mode);
 
   const [label, setLabel] = useState(defaultLabel);
   const [prompt, setPrompt] = useState("");

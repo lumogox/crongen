@@ -56,7 +56,7 @@ export function PlanExpansionModal({
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g. Split this work into two implementation approaches, then compare and finish the winner."
+              placeholder="e.g. Split this work into implementation approaches, then compare or synthesize the result."
               rows={5}
               autoFocus
             />
@@ -92,7 +92,7 @@ export function PlanExpansionModal({
                   <GitFork className="h-3.5 w-3.5" />
                   Branching
                 </div>
-                <div className="mt-1 text-[11px] text-slate-400">Approaches, compare, then finish</div>
+                <div className="mt-1 text-[11px] text-slate-400">Approaches, compare or synthesize, then finish</div>
               </button>
             </div>
           </div>

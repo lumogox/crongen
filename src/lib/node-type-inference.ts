@@ -3,6 +3,7 @@ import {
   GitFork,
   Bot,
   GitMerge,
+  Combine,
   Trophy,
   ShieldCheck,
   type LucideIcon,
@@ -21,7 +22,8 @@ const nodeTypeMeta: Record<VisualNodeType, NodeTypeMeta> = {
   task: { label: "Task", summary: "Root task", icon: FileCode2, accentColor: "#58A6FF" },
   decision: { label: "Decision", summary: "Decision point", icon: GitFork, accentColor: "#D29922" },
   agent: { label: "Work Step", summary: "Executable work", icon: Bot, accentColor: "#3FB950" },
-  merge: { label: "Compare", summary: "Review branches", icon: GitMerge, accentColor: "#8957E5" },
+  merge: { label: "Compare", summary: "Pick best branch", icon: GitMerge, accentColor: "#8957E5" },
+  synthesis: { label: "Synthesize", summary: "Combine branches", icon: Combine, accentColor: "#C084FC" },
   final: { label: "Finish", summary: "Canonical path", icon: Trophy, accentColor: "#56D364" },
   validation: { label: "Validate", summary: "Run checks", icon: ShieldCheck, accentColor: "#F2CC60" },
 };
@@ -30,7 +32,7 @@ export function getNodeTypeMeta(type: VisualNodeType): NodeTypeMeta {
   return nodeTypeMeta[type];
 }
 
-const validNodeTypes: VisualNodeType[] = ["task", "decision", "agent", "merge", "final", "validation"];
+const validNodeTypes: VisualNodeType[] = ["task", "decision", "agent", "merge", "synthesis", "final", "validation"];
 
 export function inferNodeType(
   node: DecisionNode,

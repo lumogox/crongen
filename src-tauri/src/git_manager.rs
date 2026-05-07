@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -432,7 +432,7 @@ const DEFAULT_AUTO_COMMIT_MESSAGE: &str = "chore: capture uncommitted agent chan
 pub fn agent_commit_message(node_type: Option<&str>, label: &str, prompt: &str) -> String {
     let prefix = match node_type {
         Some("validation") => "test",
-        Some("merge") => "chore",
+        Some("merge") | Some("synthesis") => "chore",
         Some("final") => "chore",
         Some("task") | Some("agent") | _ => "feat",
     };

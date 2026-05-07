@@ -24,18 +24,34 @@ pub fn build_shell_command(
         None => prompt.to_string(),
     };
 
-    // For merge nodes: instruct the agent to pick a winner, merge its branch, and write DECISION.md
+    // Compare nodes pick one winner. Synthesis nodes combine useful work across
+    // branches into one coherent result.
     if node_type == Some("merge") {
         effective_prompt.push_str(
-            "\n\nIMPORTANT — MERGE PROCEDURE (follow these steps exactly):\n\
+            "\n\nIMPORTANT — COMPARE PROCEDURE (follow these steps exactly):\n\
              1. Review the sibling_diffs above to compare each approach.\n\
-             2. Decide which approach is best (or combine the best parts).\n\
+             2. Decide which single approach is best. Do not combine approaches in this step.\n\
              3. Run `git merge <winning-branch-name> --no-edit` to bring the winning code into your worktree. \
                 The branch names are listed in sibling_diffs above.\n\
              4. If there are merge conflicts, resolve them.\n\
-             5. Write a DECISION.md at the repo root containing: (a) which approach you chose, \
-                (b) why, (c) key files changed.\n\
-             6. Commit all changes including DECISION.md.",
+             5. Write CRONGEN_DECISION.md at the repo root with the complete decision tree, conclusions, and these sections: \
+                # Crongen Decision Report, Flow Summary, Branch Outcomes, Decision, Integrated Result, \
+                Rejected or Deferred Ideas, Validation, Next Steps. Explain why the winning branch was chosen.\n\
+             6. Commit all changes including CRONGEN_DECISION.md.",
+        );
+    } else if node_type == Some("synthesis") {
+        effective_prompt.push_str(
+            "\n\nIMPORTANT — SYNTHESIS PROCEDURE (follow these steps exactly):\n\
+             1. Review the sibling_diffs above to understand each branch's implementation and tradeoffs.\n\
+             2. Identify which ideas, files, or code paths are worth combining into a better solution.\n\
+             3. Merge, cherry-pick, or manually port the useful parts from sibling branches into one coherent implementation. \
+                Remove duplicated, conflicting, or weaker code paths.\n\
+             4. Resolve conflicts and verify the final implementation is internally consistent.\n\
+             5. Write CRONGEN_DECISION.md at the repo root with the complete decision tree, conclusions, and these sections: \
+                # Crongen Decision Report, Flow Summary, Branch Outcomes, Decision, Integrated Result, \
+                Rejected or Deferred Ideas, Validation, Next Steps. Explain what was taken from each branch \
+                and why the synthesized result is better than any single branch.\n\
+             6. Commit all changes including CRONGEN_DECISION.md.",
         );
     }
 
@@ -449,6 +465,35 @@ mod tests {
     }
 
     #[test]
+    fn synthesis_prompt_requires_decision_report_and_combined_result() {
+        let execution = build_shell_command(
+            &AgentType::Codex,
+            "Resolve the alternatives",
+            &AgentTypeConfig::Codex(CodexConfig {
+                model: Some("gpt-5.4".to_string()),
+                extra_args: vec![],
+                sandbox: Some("workspace-write".to_string()),
+                approval_mode: Some("full-auto".to_string()),
+                skip_git_check: true,
+                json_output: false,
+            }),
+            None,
+            Some("synthesis"),
+            None,
+        );
+
+        let sdk = match execution {
+            ExecutionMode::Sdk(sdk) => sdk,
+            _ => panic!("codex should use SDK execution"),
+        };
+        let prompt = sdk.stdin_injection.as_deref().expect("stdin prompt");
+
+        assert!(prompt.contains("SYNTHESIS PROCEDURE"));
+        assert!(prompt.contains("CRONGEN_DECISION.md"));
+        assert!(prompt.contains("better than any single branch"));
+    }
+
+    #[test]
     fn codex_exec_uses_workspace_write_for_full_auto_mode() {
         let execution = build_shell_command(
             &AgentType::Codex,
@@ -527,10 +572,11 @@ mod tests {
         };
 
         assert!(sdk.args.iter().any(|arg| arg == "-c"));
-        assert!(sdk
-            .args
-            .iter()
-            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        assert!(
+            sdk.args
+                .iter()
+                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
+        );
     }
 
     #[test]
@@ -556,9 +602,10 @@ mod tests {
             _ => panic!("codex should use SDK execution"),
         };
 
-        assert!(sdk
-            .args
-            .ends_with(&["--search".to_string(), "-".to_string()]));
+        assert!(
+            sdk.args
+                .ends_with(&["--search".to_string(), "-".to_string()])
+        );
     }
 
     #[test]
@@ -581,10 +628,12 @@ mod tests {
         assert!(shell.args.iter().any(|arg| arg == "--sandbox"));
         assert!(shell.args.iter().any(|arg| arg == "--skip-git-repo-check"));
         assert!(shell.args.iter().any(|arg| arg == "-c"));
-        assert!(shell
-            .args
-            .iter()
-            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        assert!(
+            shell
+                .args
+                .iter()
+                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
+        );
     }
 
     #[test]
@@ -617,9 +666,10 @@ mod tests {
         assert!(sdk.args.iter().any(|arg| arg == "stream-json"));
         assert!(sdk.args.iter().any(|arg| arg == "--yolo"));
         assert!(sdk.args.iter().any(|arg| arg == "--sandbox"));
-        assert!(sdk
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--include-directories", "../shared"]));
+        assert!(
+            sdk.args
+                .windows(2)
+                .any(|pair| pair == ["--include-directories", "../shared"])
+        );
     }
 }

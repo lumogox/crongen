@@ -68,7 +68,7 @@ export function useTreeLayout({
       }
     }
 
-    // Add layout-only ordering edges so merge/final nodes rank below agent siblings.
+    // Add layout-only ordering edges so resolution/final nodes rank below agent siblings.
     // Without these, Dagre places all children of a decision at the same rank.
     const childrenOf = new Map<string, DecisionNode[]>();
     for (const node of nodes) {
@@ -80,11 +80,13 @@ export function useTreeLayout({
     }
     for (const [, siblings] of childrenOf) {
       const agents = siblings.filter((n) => n.node_type === "agent");
-      const merge = siblings.find((n) => n.node_type === "merge");
-      if (merge && agents.length > 0) {
-        // Add edges from each agent to the merge → forces merge below agents
-        for (const agent of agents) {
-          g.setEdge(agent.id, merge.id, { weight: 0, minlen: 1 });
+      const resolutions = siblings.filter((n) => n.node_type === "merge" || n.node_type === "synthesis");
+      if (resolutions.length > 0 && agents.length > 0) {
+        // Add edges from each agent to each resolution node → forces them below agents
+        for (const resolution of resolutions) {
+          for (const agent of agents) {
+            g.setEdge(agent.id, resolution.id, { weight: 0, minlen: 1 });
+          }
         }
       }
     }
@@ -128,19 +130,19 @@ export function useTreeLayout({
     const nodeMap = new Map(nodes.map((n) => [n.id, n]));
     const flowEdges: Edge[] = [];
 
-    // Standard parent→child edges (skip agent→merge edges that will be replaced)
+    // Standard parent→child edges (skip agent→resolution edges that will be replaced)
     for (const node of nodes) {
       if (!node.parent_id) continue;
 
-      // If this is a merge node whose parent is a decision, skip the decision→merge edge
-      // because we'll draw agent→merge edges instead
-      if (node.node_type === "merge") {
+      // If this is a resolution node whose parent is a decision, skip the decision→resolution edge
+      // because we'll draw agent→resolution edges instead
+      if (node.node_type === "merge" || node.node_type === "synthesis") {
         const parent = nodeMap.get(node.parent_id);
         if (parent) {
           const siblings = nodes.filter((n) => n.parent_id === node.parent_id);
           const agentSiblings = siblings.filter((n) => n.node_type === "agent");
           if (agentSiblings.length > 0) {
-            // Draw edges from each agent sibling → this merge node
+            // Draw edges from each agent sibling → this resolution node
             for (const agent of agentSiblings) {
               const variant = inferEdgeVariant(agent, node, ancestryPath, nodes);
               flowEdges.push({
@@ -152,7 +154,7 @@ export function useTreeLayout({
                 data: { variant },
               });
             }
-            continue; // Skip the normal parent→child edge for this merge node
+            continue; // Skip the normal parent→child edge for this resolution node
           }
         }
       }

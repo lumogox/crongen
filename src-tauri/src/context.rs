@@ -72,7 +72,7 @@ pub fn build_ancestor_chain(
 
 /// Build a full execution context for a node about to be executed.
 /// This includes the session info, ancestor chain, current node details,
-/// sibling status (other children of the same parent), and for merge/final
+/// sibling status (other children of the same parent), and for resolution/final
 /// nodes: git diffs from completed sibling branches.
 pub fn build_execution_context(
     conn: &Connection,
@@ -127,9 +127,11 @@ pub fn build_execution_context(
         })
         .collect();
 
-    // Sibling diffs: for merge/final nodes, include git diffs from completed siblings
+    // Sibling diffs: for resolution/final nodes, include git diffs from completed siblings
     let node_type_str = node.node_type.as_deref().unwrap_or("agent");
-    let sibling_diffs = if (node_type_str == "merge" || node_type_str == "final")
+    let sibling_diffs = if (node_type_str == "merge"
+        || node_type_str == "synthesis"
+        || node_type_str == "final")
         && repo_path.is_some()
     {
         let repo = repo_path.unwrap();
@@ -168,7 +170,7 @@ pub fn build_execution_context(
                 .collect()
         } else {
             log::warn!(
-                "No base commit found for merge/final node '{}' — skipping sibling diffs",
+                "No base commit found for resolution/final node '{}' — skipping sibling diffs",
                 node.label
             );
             Vec::new()
@@ -256,16 +258,16 @@ pub fn build_execution_context(
                         .to_string(),
                 )
             }
-        } else if my_type == "merge" {
-            // Merge nodes evaluate siblings and merge the winner — their own directive
-            // comes from agent_templates (MERGE PROCEDURE). No extra directive needed here.
+        } else if my_type == "merge" || my_type == "synthesis" {
+            // Resolution nodes get their exact compare/synthesize procedure from
+            // agent_templates. No extra directive needed here.
             None
         } else {
             match parent_type.as_deref() {
-                Some("merge") => Some(
-                    "The previous step already evaluated alternatives and merged the winning code. \
+                Some("merge") | Some("synthesis") => Some(
+                    "The previous step already resolved alternatives into the current code. \
                      Your worktree contains the chosen implementation. Do NOT re-evaluate prior decisions. \
-                     If a DECISION.md file exists, read it for rationale. \
+                     If CRONGEN_DECISION.md exists, read it for rationale. \
                      Build on the existing code to complete your specific task."
                         .to_string(),
                 ),

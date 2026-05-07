@@ -12,7 +12,7 @@ use crate::models::{AgentType, DecisionNode, NodeStatus};
 pub struct PlanNode {
     pub label: String,
     pub prompt: String,
-    pub node_type: String, // "task", "decision", "agent", "merge", "final", "validation"
+    pub node_type: String, // "task", "decision", "agent", "merge", "synthesis", "final", "validation"
     #[serde(default)]
     pub children: Vec<PlanNode>,
 }
@@ -28,9 +28,10 @@ const PLAN_SYSTEM_PROMPT: &str = r#"You are a task decomposition planner. Output
 
 Rules:
 - Root node: type "task" (one child: a "decision" or "agent")
-- "decision" nodes contain 2+ "agent" children PLUS a "merge" child (last)
-- "merge" nodes contain one "final" child
-- The tree is NESTED: task > decision > [agents..., merge > final]
+- "decision" nodes contain 2+ "agent" children PLUS a "merge" or "synthesis" child (last)
+- "merge" nodes compare alternatives and pick one winner. Use "synthesis" when complementary ideas should be combined.
+- "merge" and "synthesis" nodes contain one "final" child
+- The tree is NESTED: task > decision > [agents..., merge/synthesis > final]
 - Max 8 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo System", "Auth Login Page"), NOT the structural role. Child labels describe what each step does specifically.
@@ -38,7 +39,7 @@ LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo System"
 CRITICAL prompt scoping rules:
 - The root "task" prompt ONLY handles scaffolding: project init, install dependencies, create config files, set up folder structure. It must NOT make design choices, pick approaches, or implement features.
 - Agent prompts under a "decision" MUST say "Implement/Apply X to the existing project" — they modify the codebase left by the root task, they do NOT scaffold or create a new project.
-- The "merge" prompt evaluates/compares the agent branches.
+- The "merge" prompt evaluates branches and chooses the single best branch. The "synthesis" prompt combines useful parts from multiple branches into a better result.
 - The "final" prompt applies finishing touches to the chosen result — it does NOT re-scaffold.
 
 Example for user task "Build a calculator with theme support":
@@ -48,9 +49,10 @@ const PLAN_SYSTEM_PROMPT_EXISTING: &str = r#"You are a task decomposition planne
 
 Rules:
 - Root node: type "task" (one child: a "decision" or "agent")
-- "decision" nodes contain 2+ "agent" children PLUS a "merge" child (last)
-- "merge" nodes contain one "final" child
-- The tree is NESTED: task > decision > [agents..., merge > final]
+- "decision" nodes contain 2+ "agent" children PLUS a "merge" or "synthesis" child (last)
+- "merge" nodes compare alternatives and pick one winner. Use "synthesis" when complementary ideas should be combined.
+- "merge" and "synthesis" nodes contain one "final" child
+- The tree is NESTED: task > decision > [agents..., merge/synthesis > final]
 - Max 8 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo System", "Dark Mode Toggle"), NOT the structural role. Child labels describe what each step does specifically.
@@ -58,7 +60,7 @@ LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo System"
 CRITICAL prompt scoping rules for EXISTING projects:
 - The root "task" prompt reads and analyzes the existing codebase — it does NOT scaffold, create a new project, or re-initialize anything. It should understand the project structure, conventions, and key files before implementation begins.
 - Agent prompts under a "decision" MUST build on the existing code. They implement the requested feature/change within the existing architecture and conventions.
-- The "merge" prompt evaluates/compares the agent branches.
+- The "merge" prompt evaluates branches and chooses the single best branch. The "synthesis" prompt combines useful parts from multiple branches into a better result.
 - The "final" prompt integrates the chosen approach, updates tests, and ensures consistency with the rest of the codebase.
 
 Example for user task "Add undo/redo to the calculator":
@@ -70,7 +72,7 @@ Rules for LINEAR plans (no branching, no decisions):
 - Root node: type "task" — sets up the project
 - The tree is a single chain of "agent" nodes: task > agent > agent > ...
 - Each node has at most one child
-- NO "decision", "merge", or "final" nodes
+- NO "decision", "merge", "synthesis", or "final" nodes
 - Max 3 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Auth System", "Search Feature"), NOT the structural role. Child labels describe specific steps.
@@ -84,7 +86,7 @@ Rules for LINEAR plans (no branching, no decisions):
 - Root node: type "task" — reads and understands the existing codebase (do NOT scaffold or re-init)
 - The tree is a single chain of "agent" nodes: task > agent > agent > ...
 - Each node has at most one child
-- NO "decision", "merge", or "final" nodes
+- NO "decision", "merge", "synthesis", or "final" nodes
 - Max 3 total nodes. Prompts: 1-2 sentences.
 
 LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo", "Dark Mode"), NOT the structural role. Child labels describe specific steps.
@@ -102,7 +104,8 @@ Allowed node types:
 - "task": root task only. Summarizes the user goal and sets the starting context.
 - "agent": executable work step. This is a work item, not a provider name.
 - "decision": structural branch point. Use when alternatives should be explored.
-- "merge": executable compare step. Evaluates sibling branches and chooses or combines the best result.
+- "merge": executable compare step. Evaluates sibling branches and chooses the single best result.
+- "synthesis": executable synthesis step. Combines useful parts from sibling branches into one improved result.
 - "final": executable finish/polish step after comparison or implementation.
 - "validation": executable local validation/check step.
 
@@ -112,7 +115,7 @@ Rules:
 - Make prompts specific enough for an execution agent to act without guessing.
 - You may rewrite, add, remove, reorder, or restructure nodes when the guidance asks for it.
 - Preserve useful intent from the current flow unless the guidance explicitly steers elsewhere.
-- For decision nodes, include at least 2 agent children. Add a merge child when branches should be compared.
+- For decision nodes, include at least 2 agent children. Add a merge child for mutually exclusive alternatives, or a synthesis child when branches may contribute complementary pieces.
 - Put validation after implementation, compare, or finish steps when checks matter.
 - Do not mention Claude, Codex, Gemini, or provider-specific details inside node labels/prompts unless the user explicitly asks.
 - For existing projects, do not scaffold or re-initialize; prompts should build on the current codebase.
@@ -173,7 +176,7 @@ fn write_plan_output_schema() -> Result<PathBuf, String> {
                     "prompt": { "type": "string" },
                     "node_type": {
                         "type": "string",
-                        "enum": ["task", "decision", "agent", "merge", "final", "validation"]
+                        "enum": ["task", "decision", "agent", "merge", "synthesis", "final", "validation"]
                     },
                     "children": {
                         "type": "array",
@@ -775,8 +778,9 @@ mod tests {
     use std::fs;
 
     use super::{
-        build_planner_invocation, cleanup_output_file, codex_model_requires_default_retry,
-        normalize_plan_for_complexity, plan_children_to_nodes, GeneratedPlan, PlanNode,
+        GeneratedPlan, PlanNode, build_planner_invocation, cleanup_output_file,
+        codex_model_requires_default_retry, normalize_plan_for_complexity, plan_children_to_nodes,
+        write_plan_output_schema,
     };
     use crate::models::AgentType;
 
@@ -797,6 +801,15 @@ mod tests {
     }
 
     #[test]
+    fn plan_schema_accepts_synthesis_nodes() {
+        let schema_file = write_plan_output_schema().expect("schema file");
+        let schema = fs::read_to_string(&schema_file).expect("schema content");
+
+        assert!(schema.contains("\"synthesis\""));
+        cleanup_output_file(Some(&schema_file));
+    }
+
+    #[test]
     fn planner_dispatch_builds_codex_invocation() {
         let invocation = build_planner_invocation(
             &AgentType::Codex,
@@ -809,10 +822,12 @@ mod tests {
 
         assert_eq!(invocation.program, "codex");
         assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "--output-last-message"));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "--output-last-message")
+        );
         assert!(invocation.args.iter().any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
         cleanup_output_file(invocation.output_file.as_ref());
@@ -831,10 +846,12 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
+        );
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
     }
@@ -862,14 +879,18 @@ mod tests {
 
         assert_eq!(invocation.program, "gemini");
         assert!(invocation.args.iter().any(|arg| arg == "--prompt"));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--approval-mode", "plan"]));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--include-directories", "../shared"]));
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--approval-mode", "plan"])
+        );
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--include-directories", "../shared"])
+        );
         assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
         assert!(invocation.args.iter().any(|arg| arg == "json"));
         assert!(invocation.output_file.is_none());

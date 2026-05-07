@@ -62,7 +62,7 @@ impl OrchestratorManager {
         .await
         .map_err(|e| format!("Task: {e}"))??;
 
-        // Count all runnable nodes (task, agent, merge, final — everything except decision)
+        // Count all runnable nodes (everything except pure decision points)
         let total_count = subtree
             .iter()
             .filter(|n| {
@@ -270,8 +270,8 @@ async fn orchestration_loop(
         .clone();
 
     // Linearize the tree into execution order.
-    // For decision nodes: run all agent children first, THEN merge/final children.
-    // This ensures merge nodes execute only after all sibling agents complete.
+    // For decision nodes: run all agent children first, THEN resolution/final children.
+    // This ensures resolution nodes execute only after all sibling agents complete.
     fn linearize(
         node_id: &str,
         node_map: &HashMap<String, DecisionNode>,
@@ -288,13 +288,13 @@ async fn orchestration_loop(
         let node_type = node.and_then(|n| n.node_type.as_deref()).unwrap_or("agent");
 
         if node_type == "decision" {
-            // Separate into agents and structural (merge/final)
+            // Separate into agents and structural resolution/final nodes.
             let mut agent_kids = Vec::new();
             let mut structural_kids = Vec::new();
             for kid_id in kids {
                 if let Some(kid) = node_map.get(kid_id) {
                     let kt = kid.node_type.as_deref().unwrap_or("agent");
-                    if kt == "merge" || kt == "final" {
+                    if matches!(kt, "merge" | "synthesis" | "final") {
                         structural_kids.push(kid_id.clone());
                     } else {
                         agent_kids.push(kid_id.clone());
@@ -309,7 +309,7 @@ async fn orchestration_loop(
                 linearize(kid_id, node_map, children_map, out);
             }
         } else {
-            // For task/agent/merge/final: process children in order
+            // For task/agent/resolution/final: process children in order
             for kid_id in kids {
                 linearize(kid_id, node_map, children_map, out);
             }
@@ -429,7 +429,7 @@ async fn orchestration_loop(
                                 for kid_id in &kid_ids {
                                     if let Some(kid) = nm.get(kid_id) {
                                         let kt = kid.node_type.as_deref().unwrap_or("agent");
-                                        if kt == "merge" || kt == "final" {
+                                        if matches!(kt, "merge" | "synthesis" | "final") {
                                             continue;
                                         }
                                         // Re-fetch current status from DB
@@ -464,7 +464,7 @@ async fn orchestration_loop(
                             .filter_map(|kid_id| {
                                 let kid = node_map.get(kid_id)?;
                                 let kt = kid.node_type.as_deref().unwrap_or("agent");
-                                if kt == "merge" || kt == "final" {
+                                if matches!(kt, "merge" | "synthesis" | "final") {
                                     return None;
                                 }
                                 Some(DecisionOption {
@@ -545,10 +545,10 @@ async fn orchestration_loop(
                 }
             }
 
-            "merge" | "final" => {
-                // Merge and final nodes are runnable — they spawn a real agent process
+            "merge" | "synthesis" | "final" => {
+                // Resolution and final nodes are runnable — they spawn a real agent process
                 // with full TOON context (ancestor chain + sibling results).
-                // Merge evaluates sibling agent outputs; final executes the culminating step.
+                // Resolution evaluates sibling agent outputs; final executes the culminating step.
                 if node.status == NodeStatus::Pending {
                     run_single_node(node_id, &db, &pty, &sdk, &app).await?;
 
@@ -591,7 +591,7 @@ async fn orchestration_loop(
 fn is_decision_branch_node(node: &DecisionNode) -> bool {
     !matches!(
         node.node_type.as_deref().unwrap_or("agent"),
-        "decision" | "merge" | "final"
+        "decision" | "merge" | "synthesis" | "final"
     )
 }
 
@@ -1093,5 +1093,39 @@ async fn handle_parallel_completion(
             completion.node_id, code
         )),
         None => Some(format!("Node {} exited without status", completion.node_id)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_decision_branch_node;
+    use crate::models::{DecisionNode, NodeStatus};
+
+    fn node_with_type(node_type: &str) -> DecisionNode {
+        DecisionNode {
+            id: format!("node-{node_type}"),
+            project_id: "project".to_string(),
+            parent_id: Some("decision".to_string()),
+            label: node_type.to_string(),
+            prompt: "Prompt".to_string(),
+            branch_name: format!("structural/{node_type}/node"),
+            worktree_path: None,
+            commit_hash: None,
+            status: NodeStatus::Pending,
+            exit_code: None,
+            node_type: Some(node_type.to_string()),
+            agent_type_override: None,
+            scheduled_at: None,
+            started_at: None,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn synthesis_is_structural_not_parallel_branch_work() {
+        assert!(!is_decision_branch_node(&node_with_type("synthesis")));
+        assert!(!is_decision_branch_node(&node_with_type("merge")));
+        assert!(is_decision_branch_node(&node_with_type("agent")));
     }
 }

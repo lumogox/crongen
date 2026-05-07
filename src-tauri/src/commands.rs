@@ -32,6 +32,20 @@ pub struct AppState {
     pub orchestrator: Arc<OrchestratorManager>,
 }
 
+const VALID_STRUCTURAL_NODE_TYPES: &[&str] = &[
+    "task",
+    "decision",
+    "agent",
+    "merge",
+    "synthesis",
+    "final",
+    "validation",
+];
+
+fn is_valid_structural_node_type(node_type: &str) -> bool {
+    VALID_STRUCTURAL_NODE_TYPES.contains(&node_type)
+}
+
 #[derive(Debug, Serialize)]
 pub struct FeatureBranchResult {
     pub branch_name: String,
@@ -98,7 +112,9 @@ fn readiness_message(
             format!("{label} CLI is not installed. Open Agent Bay to finish {role} setup.{suffix}")
         }
         AgentProviderStatus::NeedsLogin => {
-            format!("{label} needs login before it can handle {role}. Open Agent Bay to continue.{suffix}")
+            format!(
+                "{label} needs login before it can handle {role}. Open Agent Bay to continue.{suffix}"
+            )
         }
         AgentProviderStatus::ComingSoon => {
             format!(
@@ -1308,10 +1324,9 @@ pub async fn create_structural_node(
     node_type: String,
 ) -> Result<DecisionNode, String> {
     // Validate node_type
-    if !["task", "decision", "agent", "merge", "final", "validation"].contains(&node_type.as_str())
-    {
+    if !is_valid_structural_node_type(&node_type) {
         return Err(format!(
-            "Invalid structural node type: {node_type}. Must be task, decision, agent, merge, final, or validation"
+            "Invalid structural node type: {node_type}. Must be task, decision, agent, merge, synthesis, final, or validation"
         ));
     }
 
@@ -3037,8 +3052,8 @@ pub async fn get_node_context(
 mod tests {
     use super::{
         build_merge_resolution_invocation, classify_codex_login_status, effective_node_agent,
-        parse_claude_auth_logged_in, parse_codex_model_catalog, resolve_node_agent_config,
-        role_requires_provider_validation,
+        is_valid_structural_node_type, parse_claude_auth_logged_in, parse_codex_model_catalog,
+        resolve_node_agent_config, role_requires_provider_validation,
     };
     use crate::models::{
         AgentCliConfigs, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
@@ -3080,6 +3095,13 @@ mod tests {
             created_at: 1,
             updated_at: 1,
         }
+    }
+
+    #[test]
+    fn structural_node_validation_accepts_synthesis() {
+        assert!(is_valid_structural_node_type("synthesis"));
+        assert!(is_valid_structural_node_type("merge"));
+        assert!(!is_valid_structural_node_type("mix"));
     }
 
     #[test]
@@ -3201,10 +3223,12 @@ mod tests {
         .expect("codex invocation");
 
         assert_eq!(invocation.program, "codex");
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "--output-last-message"));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "--output-last-message")
+        );
         assert!(invocation.output_file.is_some());
     }
 
@@ -3220,10 +3244,12 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(invocation
-            .args
-            .iter()
-            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
+        assert!(
+            invocation
+                .args
+                .iter()
+                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
+        );
     }
 
     #[test]
@@ -3240,22 +3266,30 @@ mod tests {
         assert_eq!(invocation.program, "gemini");
         assert_eq!(invocation.output_file, None);
         assert!(invocation.args.iter().any(|arg| arg == "--yolo"));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--output-format", "json"]));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--model", "gemini-2.5-pro"]));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--include-directories", "../shared"]));
-        assert!(invocation
-            .args
-            .windows(2)
-            .any(|pair| pair == ["--prompt", "Resolve the merge"]));
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--output-format", "json"])
+        );
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--model", "gemini-2.5-pro"])
+        );
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--include-directories", "../shared"])
+        );
+        assert!(
+            invocation
+                .args
+                .windows(2)
+                .any(|pair| pair == ["--prompt", "Resolve the merge"])
+        );
     }
 
     #[test]

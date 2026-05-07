@@ -10,7 +10,12 @@ export function inferFlowModeFromNodes(nodes: DecisionNode[]): FlowMode {
   const childrenByParent = new Map<string, number>();
 
   for (const node of nodes) {
-    if (node.node_type === "decision" || node.node_type === "merge" || node.node_type === "final") {
+    if (
+      node.node_type === "decision" ||
+      node.node_type === "merge" ||
+      node.node_type === "synthesis" ||
+      node.node_type === "final"
+    ) {
       return "branching";
     }
 

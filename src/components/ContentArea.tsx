@@ -244,9 +244,10 @@ function ContentAreaInner({
       (n) => !childIds.has(n.id) && (n.status === "completed" || n.status === "merged"),
     );
     if (leaves.length === 0) return null;
-    // Prefer "final" type, then "merge", then deepest by created_at
+    // Prefer "final" type, then resolution nodes, then deepest by created_at
     const sorted = leaves.sort((a, b) => {
-      const typeRank = (t: string | null) => (t === "final" ? 0 : t === "merge" ? 1 : 2);
+      const typeRank = (t: string | null) =>
+        t === "final" ? 0 : t === "merge" || t === "synthesis" ? 1 : 2;
       const rankDiff = typeRank(a.node_type) - typeRank(b.node_type);
       if (rankDiff !== 0) return rankDiff;
       return b.created_at - a.created_at;

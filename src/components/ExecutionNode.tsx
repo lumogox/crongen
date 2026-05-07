@@ -51,7 +51,7 @@ const statusConfig: Record<
   },
 };
 
-const structuralTypes = new Set(["decision", "merge", "final"]);
+const structuralTypes = new Set(["decision", "merge", "synthesis", "final"]);
 const assignableAgents: AgentType[] = ["claude_code", "codex", "gemini"];
 
 function ExecutionNodeInner({
@@ -82,7 +82,7 @@ function ExecutionNodeInner({
   const isStructural = structuralTypes.has(visualType);
   const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent;
   const canAssignAgent =
-    ["task", "agent", "merge", "final"].includes(visualType) &&
+    ["task", "agent", "merge", "synthesis", "final"].includes(visualType) &&
     node.status === "pending" &&
     !node.worktree_path;
 
