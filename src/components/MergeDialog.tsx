@@ -33,6 +33,30 @@ import type { MergePreview } from "../lib/tauri-commands";
 type MergeStep = "preview" | "merging" | "success" | "conflict" | "error";
 type ShipOutcome = "merged" | "branched";
 
+function normalizeBranchName(value: string): string {
+  return sanitizeBranchInput(value).replace(/\/+$/g, "");
+}
+
+function sanitizeBranchInput(value: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/^refs\/heads\//, "")
+    .replace(/\\/g, "/")
+    .replace(/[^a-z0-9/_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/\/+/g, "/");
+
+  const keepsTrailingSlash = cleaned.endsWith("/");
+  const sanitized = cleaned
+    .split("/")
+    .map((part) => part.replace(/^[-_]+|[-_]+$/g, ""))
+    .filter(Boolean)
+    .join("/");
+
+  return keepsTrailingSlash && sanitized ? `${sanitized}/` : sanitized;
+}
+
 const MERGE_DIALOG_STYLE = {
   width: "min(96vw, 72rem)",
   maxWidth: "min(96vw, 72rem)",
@@ -145,14 +169,18 @@ export function MergeDialog({
   };
 
   const handleCreateBranch = async () => {
-    if (!branchName.trim()) return;
+    const safeBranchName = normalizeBranchName(branchName);
+    if (!safeBranchName) return;
+    if (safeBranchName !== branchName) {
+      setBranchName(safeBranchName);
+    }
     setStep("merging");
     setMergingStepIndex(0);
 
     try {
       const created = await createFeatureBranch(
         terminalNode.id,
-        branchName.trim(),
+        safeBranchName,
       );
       setCreatedBranch(created.branch_name);
       setCreatedCommit(created.commit_hash);
@@ -298,7 +326,7 @@ function PreviewStep({
                 </div>
                 <div className="mt-0.5 font-mono text-sm text-slate-200">
                   {action === "branch"
-                    ? branchName.trim() || "feature branch"
+                    ? normalizeBranchName(branchName) || "feature branch"
                     : currentBranch}
                 </div>
               </div>
@@ -350,9 +378,14 @@ function PreviewStep({
               <input
                 type="text"
                 value={branchName}
-                onChange={(e) => onBranchNameChange(e.target.value)}
+                onChange={(e) =>
+                  onBranchNameChange(sanitizeBranchInput(e.target.value))
+                }
+                onBlur={() => onBranchNameChange(normalizeBranchName(branchName))}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && branchName.trim()) onCreateBranch();
+                  if (e.key === "Enter" && normalizeBranchName(branchName)) {
+                    onCreateBranch();
+                  }
                 }}
                 placeholder="feature/my-branch"
                 autoFocus
@@ -421,7 +454,7 @@ function PreviewStep({
         ) : (
           <Button
             onClick={onCreateBranch}
-            disabled={!branchName.trim()}
+            disabled={!normalizeBranchName(branchName)}
             className="bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-40"
           >
             <GitBranch className="mr-2 h-4 w-4" />

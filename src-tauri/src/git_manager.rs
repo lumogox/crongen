@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -347,9 +347,43 @@ pub fn auto_commit_worktree(worktree_path: &str) -> Result<bool> {
 
 // ─── Branch Info ─────────────────────────────────────────────
 
+fn validate_feature_branch_name(branch_name: &str) -> Result<()> {
+    if branch_name.is_empty() || branch_name.trim() != branch_name {
+        bail!("Branch name cannot be empty or contain leading/trailing whitespace");
+    }
+    if branch_name.chars().any(|ch| {
+        !(ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '-' | '_' | '/'))
+    }) {
+        bail!(
+            "Branch name can only use lowercase letters, numbers, dashes, underscores, and slashes"
+        );
+    }
+    if branch_name.starts_with('/')
+        || branch_name.ends_with('/')
+        || branch_name.contains("//")
+        || branch_name.starts_with('-')
+        || branch_name.contains("/-")
+    {
+        bail!("Branch name has an invalid path shape");
+    }
+
+    let output = Command::new("git")
+        .args(["check-ref-format", "--branch", branch_name])
+        .output()
+        .context("Failed to validate branch name")?;
+
+    if !output.status.success() {
+        bail!("Invalid branch name: {branch_name}");
+    }
+
+    Ok(())
+}
+
 /// Create a new branch pointing at a specific commit.
 /// Returns the full branch name.
 pub fn create_branch_at(repo_path: &str, branch_name: &str, commit_sha: &str) -> Result<String> {
+    validate_feature_branch_name(branch_name)?;
+
     let output = Command::new("git")
         .current_dir(repo_path)
         .args(["branch", branch_name, commit_sha])
@@ -585,7 +619,7 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_branch_at_and_checkout, get_current_commit};
+    use super::{create_branch_at_and_checkout, get_current_commit, validate_feature_branch_name};
     use std::{fs, path::PathBuf, process::Command};
 
     fn temp_repo_path() -> PathBuf {
@@ -656,5 +690,13 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(repo_path);
+    }
+
+    #[test]
+    fn validate_feature_branch_name_rejects_unformatted_text() {
+        assert!(validate_feature_branch_name("feature/new-vfxs-asdasd-asdqwe").is_ok());
+        assert!(validate_feature_branch_name("Feature/new-vfxs. Asdasd asdqwe").is_err());
+        assert!(validate_feature_branch_name("feature/new vfx").is_err());
+        assert!(validate_feature_branch_name("feature//new-vfx").is_err());
     }
 }
