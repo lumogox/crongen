@@ -34,12 +34,17 @@ type MergeStep = "preview" | "merging" | "success" | "conflict" | "error";
 type ShipOutcome = "merged" | "branched";
 
 function normalizeBranchName(value: string): string {
-  return sanitizeBranchInput(value).replace(/\/+$/g, "");
+  return sanitizeBranchInput(value)
+    .replace(/\/+$/g, "")
+    .split("/")
+    .map((part) => part.replace(/^[-_]+|[-_]+$/g, ""))
+    .filter(Boolean)
+    .join("/");
 }
 
 function sanitizeBranchInput(value: string): string {
   const cleaned = value
-    .trim()
+    .trimStart()
     .toLowerCase()
     .replace(/^refs\/heads\//, "")
     .replace(/\\/g, "/")
@@ -50,7 +55,13 @@ function sanitizeBranchInput(value: string): string {
   const keepsTrailingSlash = cleaned.endsWith("/");
   const sanitized = cleaned
     .split("/")
-    .map((part) => part.replace(/^[-_]+|[-_]+$/g, ""))
+    .map((part, index, parts) => {
+      const isLast = index === parts.length - 1;
+      const withoutLeadingSeparators = part.replace(/^[-_]+/g, "");
+      return isLast
+        ? withoutLeadingSeparators
+        : withoutLeadingSeparators.replace(/[-_]+$/g, "");
+    })
     .filter(Boolean)
     .join("/");
 
