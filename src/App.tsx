@@ -1134,8 +1134,8 @@ function App() {
     }
   }, [applyUpdatedNode, guardAgentRole, selectedProject]);
 
-  const handleMergeComplete = useCallback(async () => {
-    if (selectedSessionId) {
+  const handleMergeComplete = useCallback(async (outcome: "merged" | "branched") => {
+    if (outcome === "merged" && selectedSessionId) {
       setSessions((prev) =>
         prev.map((s) => s.id === selectedSessionId ? { ...s, status: "merged" as const } : s),
       );
@@ -1145,6 +1145,9 @@ function App() {
       const sessionNodes = filterSessionSubtree(updated, selectedSessionId);
       setFlowMode(inferFlowModeFromNodes(sessionNodes));
       setTreeNodes(sessionNodes);
+      getRepoBranch(selectedProjectId)
+        .then(setCurrentBranch)
+        .catch(() => setCurrentBranch(null));
     }
   }, [selectedProjectId, selectedSessionId]);
 

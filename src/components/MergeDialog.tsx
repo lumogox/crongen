@@ -31,6 +31,7 @@ import {
 import type { MergePreview } from "../lib/tauri-commands";
 
 type MergeStep = "preview" | "merging" | "success" | "conflict" | "error";
+type ShipOutcome = "merged" | "branched";
 
 const MERGE_DIALOG_STYLE = {
   width: "min(96vw, 72rem)",
@@ -58,7 +59,7 @@ interface MergeDialogProps {
   terminalNode: DecisionNode;
   sessionRootId: string;
   currentBranch: string;
-  onComplete: () => void;
+  onComplete: (outcome: ShipOutcome) => void;
 }
 
 export function MergeDialog({
@@ -79,6 +80,7 @@ export function MergeDialog({
   const [branchName, setBranchName] = useState("");
   const [mergingStepIndex, setMergingStepIndex] = useState(0);
   const [createdBranch, setCreatedBranch] = useState<string | null>(null);
+  const [createdCommit, setCreatedCommit] = useState<string | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Reset state when dialog opens
@@ -94,6 +96,7 @@ export function MergeDialog({
     setBranchName("");
     setMergingStepIndex(0);
     setCreatedBranch(null);
+    setCreatedCommit(null);
 
     getMergePreview(terminalNode.id)
       .then(setPreview)
@@ -151,8 +154,8 @@ export function MergeDialog({
         terminalNode.id,
         branchName.trim(),
       );
-      setCreatedBranch(created);
-      await markNodeMerged(sessionRootId).catch(() => {});
+      setCreatedBranch(created.branch_name);
+      setCreatedCommit(created.commit_hash);
       setStep("success");
     } catch (e) {
       setError(String(e));
@@ -162,7 +165,7 @@ export function MergeDialog({
 
   const handleDone = () => {
     onOpenChange(false);
-    onComplete();
+    onComplete(createdBranch ? "branched" : "merged");
   };
 
   const handleBranchFromConflict = () => {
@@ -206,6 +209,7 @@ export function MergeDialog({
           <SuccessStep
             mergeResult={mergeResult}
             createdBranch={createdBranch}
+            createdCommit={createdCommit}
             currentBranch={currentBranch}
             terminalNode={terminalNode}
             onDone={handleDone}
@@ -264,7 +268,7 @@ function PreviewStep({
           Ship it
         </DialogTitle>
         <DialogDescription className="text-slate-400">
-          Merge your work into {currentBranch}
+          Merge into {currentBranch}, or create and check out a feature branch.
         </DialogDescription>
       </DialogHeader>
 
@@ -293,7 +297,9 @@ function PreviewStep({
                   Target
                 </div>
                 <div className="mt-0.5 font-mono text-sm text-slate-200">
-                  {currentBranch}
+                  {action === "branch"
+                    ? branchName.trim() || "feature branch"
+                    : currentBranch}
                 </div>
               </div>
             </div>
@@ -331,7 +337,7 @@ function PreviewStep({
               <span
                 className={`text-xs font-medium ${action === "branch" ? "text-sky-200" : "text-slate-300"}`}
               >
-                Create feature branch
+                Create and checkout branch
               </span>
             </button>
           </div>
@@ -419,7 +425,7 @@ function PreviewStep({
             className="bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-40"
           >
             <GitBranch className="mr-2 h-4 w-4" />
-            Create branch
+            Create + checkout
           </Button>
         )}
       </DialogFooter>
@@ -446,7 +452,7 @@ function MergingStep({
   isCreatingBranch: boolean;
 }) {
   const steps = isCreatingBranch
-    ? ["Creating branch..."]
+    ? ["Committing final work", "Creating branch", "Checking out branch"]
     : MERGE_STEP_LABELS.map((s) => s.replace("{target}", currentBranch));
 
   return (
@@ -511,12 +517,14 @@ function StepIndicator({
 function SuccessStep({
   mergeResult,
   createdBranch,
+  createdCommit,
   currentBranch,
   terminalNode,
   onDone,
 }: {
   mergeResult: MergeResult | null;
   createdBranch: string | null;
+  createdCommit: string | null;
   currentBranch: string;
   terminalNode: DecisionNode;
   onDone: () => void;
@@ -543,8 +551,13 @@ function SuccessStep({
                 <span className="font-mono text-sky-300">{createdBranch}</span>
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                Push this branch and open a PR when ready
+                Project repo checked out for local testing
               </div>
+              {createdCommit && (
+                <div className="mt-1 font-mono text-[11px] text-slate-500">
+                  {createdCommit.slice(0, 8)}
+                </div>
+              )}
             </>
           ) : (
             <>

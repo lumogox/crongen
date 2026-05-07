@@ -365,6 +365,33 @@ pub fn create_branch_at(repo_path: &str, branch_name: &str, commit_sha: &str) ->
     Ok(branch_name.to_string())
 }
 
+/// Create a new branch at a specific commit and check it out in the main repo.
+pub fn create_branch_at_and_checkout(
+    repo_path: &str,
+    branch_name: &str,
+    commit_sha: &str,
+) -> Result<String> {
+    create_branch_at(repo_path, branch_name, commit_sha)?;
+
+    let checkout = Command::new("git")
+        .current_dir(repo_path)
+        .args(["checkout", branch_name])
+        .output()
+        .with_context(|| format!("Failed to checkout branch {branch_name}"))?;
+
+    if !checkout.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout.stderr);
+        let _ = Command::new("git")
+            .current_dir(repo_path)
+            .args(["branch", "-D", branch_name])
+            .output();
+        bail!("git checkout failed for {branch_name}: {stderr}");
+    }
+
+    log::info!("Checked out branch {branch_name} at {commit_sha}");
+    Ok(branch_name.to_string())
+}
+
 // ─── Merge ───────────────────────────────────────────────────
 
 /// Merge a source branch into a target branch (defaults to main/master).
@@ -554,4 +581,80 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
     }
 
     get_current_commit(repo_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{create_branch_at_and_checkout, get_current_commit};
+    use std::{fs, path::PathBuf, process::Command};
+
+    fn temp_repo_path() -> PathBuf {
+        std::env::temp_dir().join(format!("crongen-git-manager-test-{}", uuid::Uuid::new_v4()))
+    }
+
+    fn run_git(repo_path: &PathBuf, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(repo_path)
+            .args(args)
+            .output()
+            .unwrap_or_else(|err| panic!("failed to run git {args:?}: {err}"));
+
+        if !output.status.success() {
+            panic!(
+                "git {:?} failed: {}",
+                args,
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn create_branch_at_and_checkout_updates_working_repo() {
+        let repo_path = temp_repo_path();
+        fs::create_dir_all(&repo_path).expect("create temp repo");
+
+        run_git(&repo_path, &["init", "-b", "main"]);
+        run_git(&repo_path, &["config", "user.name", "crongen-test"]);
+        run_git(
+            &repo_path,
+            &["config", "user.email", "crongen-test@example.com"],
+        );
+
+        fs::write(repo_path.join("feature.txt"), "base\n").expect("write base file");
+        run_git(&repo_path, &["add", "feature.txt"]);
+        run_git(&repo_path, &["commit", "-m", "base"]);
+
+        run_git(&repo_path, &["checkout", "-b", "source"]);
+        fs::write(repo_path.join("feature.txt"), "final\n").expect("write final file");
+        run_git(&repo_path, &["commit", "-am", "final"]);
+        let final_commit =
+            get_current_commit(repo_path.to_str().expect("utf8 path")).expect("get final commit");
+
+        run_git(&repo_path, &["checkout", "main"]);
+
+        let created = create_branch_at_and_checkout(
+            repo_path.to_str().expect("utf8 path"),
+            "feature/test-final",
+            &final_commit,
+        )
+        .expect("create and checkout branch");
+
+        assert_eq!(created, "feature/test-final");
+        assert_eq!(
+            fs::read_to_string(repo_path.join("feature.txt")).expect("read file"),
+            "final\n"
+        );
+
+        let current_branch = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["branch", "--show-current"])
+            .output()
+            .expect("show current branch");
+        assert_eq!(
+            String::from_utf8_lossy(&current_branch.stdout).trim(),
+            "feature/test-final"
+        );
+
+        let _ = fs::remove_dir_all(repo_path);
+    }
 }

@@ -282,10 +282,15 @@ export async function getRepoBranch(projectId: string): Promise<string> {
   return invoke("get_repo_branch", { projectId });
 }
 
+export interface FeatureBranchResult {
+  branch_name: string;
+  commit_hash: string;
+}
+
 export async function createFeatureBranch(
   nodeId: string,
   branchName: string,
-): Promise<string> {
+): Promise<FeatureBranchResult> {
   return invoke("create_feature_branch", { nodeId, branchName });
 }
 

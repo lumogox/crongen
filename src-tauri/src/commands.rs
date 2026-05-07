@@ -4,7 +4,7 @@ use std::{
 };
 
 use rusqlite::Connection;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 use tokio::process::Command;
 
@@ -30,6 +30,12 @@ pub struct AppState {
     pub pty: Arc<PtyManager>,
     pub sdk: Arc<SdkManager>,
     pub orchestrator: Arc<OrchestratorManager>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FeatureBranchResult {
+    pub branch_name: String,
+    pub commit_hash: String,
 }
 
 #[derive(Debug)]
@@ -2754,7 +2760,7 @@ pub async fn create_feature_branch(
     state: State<'_, AppState>,
     node_id: String,
     branch_name: String,
-) -> Result<String, String> {
+) -> Result<FeatureBranchResult, String> {
     let db = state.db.clone();
 
     tokio::task::spawn_blocking(move || {
@@ -2762,13 +2768,28 @@ pub async fn create_feature_branch(
         let node = db::node_get_by_id(&conn, &node_id).map_err(|e| format!("{e}"))?;
         let project = db::project_get_by_id(&conn, &node.project_id).map_err(|e| format!("{e}"))?;
 
-        let commit = node
+        let mut commit = node
             .commit_hash
-            .as_deref()
+            .clone()
             .ok_or_else(|| "Node has no commit hash — run the session first".to_string())?;
 
-        git_manager::create_branch_at(&project.repo_path, &branch_name, commit)
-            .map_err(|e| format!("{e}"))
+        if let Some(worktree_path) = node.worktree_path.as_deref() {
+            if std::path::Path::new(worktree_path).exists() {
+                git_manager::auto_commit_worktree(worktree_path).map_err(|e| format!("{e}"))?;
+                commit =
+                    git_manager::get_current_commit(worktree_path).map_err(|e| format!("{e}"))?;
+                db::node_update_commit(&conn, &node_id, &commit).map_err(|e| format!("{e}"))?;
+            }
+        }
+
+        let created_branch =
+            git_manager::create_branch_at_and_checkout(&project.repo_path, &branch_name, &commit)
+                .map_err(|e| format!("{e}"))?;
+
+        Ok(FeatureBranchResult {
+            branch_name: created_branch,
+            commit_hash: commit,
+        })
     })
     .await
     .map_err(|e| format!("Task error: {e}"))?

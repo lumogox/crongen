@@ -47,7 +47,7 @@ interface ContentAreaProps {
   orchestratorStatus: OrchestratorStatus | null;
   onStartOrchestrator?: (mode: OrchestratorMode) => void;
   onCancelOrchestrator?: () => void;
-  onMergeComplete?: () => void;
+  onMergeComplete?: (outcome: "merged" | "branched") => void;
   currentBranch?: string | null;
   debugMode?: boolean;
   agentSetupReminder?: string | null;
