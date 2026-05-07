@@ -1478,14 +1478,11 @@ pub async fn merge_node_branch(
         .await
         .map_err(|e| format!("Task error: {e}"))??;
 
-        // Remove the worktree (branch is already merged)
-        if let Some(wt_path) = &node.worktree_path {
-            let repo = project.repo_path.clone();
-            let wt = wt_path.clone();
-            let _ =
-                tokio::task::spawn_blocking(move || git_manager::remove_worktree(&repo, &wt, true))
-                    .await;
-        }
+        let repo = project.repo_path.clone();
+        tokio::task::spawn_blocking(move || git_manager::cleanup_crongen_worktrees(&repo))
+            .await
+            .map_err(|e| format!("Task error: {e}"))?
+            .map_err(|e| format!("{e}"))?;
 
         log::info!("Merged node {} branch {}", node.id, node.branch_name);
 
@@ -2785,6 +2782,8 @@ pub async fn create_feature_branch(
         let created_branch =
             git_manager::create_branch_at_and_checkout(&project.repo_path, &branch_name, &commit)
                 .map_err(|e| format!("{e}"))?;
+
+        git_manager::cleanup_crongen_worktrees(&project.repo_path).map_err(|e| format!("{e}"))?;
 
         Ok(FeatureBranchResult {
             branch_name: created_branch,

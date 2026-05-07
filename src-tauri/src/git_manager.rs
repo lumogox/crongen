@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -140,60 +140,6 @@ fn worktrees_dir(repo_path: &str) -> PathBuf {
     Path::new(repo_path).join(".crongen-worktrees")
 }
 
-fn ensure_worktrees_excluded(repo_path: &str) -> Result<()> {
-    let output = Command::new("git")
-        .current_dir(repo_path)
-        .args(["rev-parse", "--git-path", "info/exclude"])
-        .output()
-        .context("Failed to locate git exclude file")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Failed to locate git exclude file: {stderr}");
-    }
-
-    let exclude_path_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let exclude_path = PathBuf::from(&exclude_path_text);
-    let exclude_path = if exclude_path.is_absolute() {
-        exclude_path
-    } else {
-        Path::new(repo_path).join(exclude_path)
-    };
-
-    if let Some(parent) = exclude_path.parent() {
-        std::fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "Failed to create git exclude directory: {}",
-                parent.display()
-            )
-        })?;
-    }
-
-    let mut content = if exclude_path.exists() {
-        std::fs::read_to_string(&exclude_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    if !content
-        .lines()
-        .any(|line| line.trim() == ".crongen-worktrees/")
-    {
-        if !content.is_empty() && !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push_str(".crongen-worktrees/\n");
-        std::fs::write(&exclude_path, content).with_context(|| {
-            format!(
-                "Failed to update git exclude file: {}",
-                exclude_path.display()
-            )
-        })?;
-    }
-
-    Ok(())
-}
-
 // ─── Worktree Create ─────────────────────────────────────────
 
 /// Create a git worktree on a new branch, optionally from a specific commit.
@@ -206,8 +152,6 @@ pub fn create_worktree(
     branch_name: &str,
     from_commit: Option<&str>,
 ) -> Result<WorktreeInfo> {
-    ensure_worktrees_excluded(repo_path)?;
-
     let wt_dir = worktrees_dir(repo_path);
     std::fs::create_dir_all(&wt_dir)
         .with_context(|| format!("Failed to create worktrees directory: {}", wt_dir.display()))?;
@@ -283,17 +227,126 @@ pub fn remove_worktree(repo_path: &str, worktree_path: &str, delete_branch: bool
         }
     }
 
+    let _ = Command::new("git")
+        .current_dir(repo_path)
+        .args(["worktree", "prune"])
+        .output();
+
     // Delete the branch from the main repo if requested
     if let Some(branch) = branch_name {
-        let _ = Command::new("git")
+        let delete = Command::new("git")
             .current_dir(repo_path)
             .args(["branch", "-D", &branch])
             .output();
+        if !delete
+            .as_ref()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+        {
+            let _ = Command::new("git")
+                .current_dir(repo_path)
+                .args(["worktree", "prune"])
+                .output();
+            let _ = Command::new("git")
+                .current_dir(repo_path)
+                .args(["branch", "-D", &branch])
+                .output();
+        }
         log::info!("Deleted branch: {branch}");
     }
 
     log::info!("Removed worktree: {worktree_path}");
     Ok(())
+}
+
+/// Remove every crongen-managed worktree for a repository and delete the
+/// temporary `crongen/*` branches they had checked out.
+pub fn cleanup_crongen_worktrees(repo_path: &str) -> Result<Vec<String>> {
+    let wt_root = worktrees_dir(repo_path);
+    if !wt_root.exists() {
+        return Ok(Vec::new());
+    }
+    let wt_root = std::fs::canonicalize(&wt_root).with_context(|| {
+        format!(
+            "Failed to resolve worktrees directory: {}",
+            wt_root.display()
+        )
+    })?;
+
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["worktree", "list", "--porcelain"])
+        .output()
+        .context("Failed to list git worktrees")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git worktree list failed: {stderr}");
+    }
+
+    let mut removed = Vec::new();
+    let mut current_worktree: Option<String> = None;
+    let mut current_branch: Option<String> = None;
+
+    let mut cleanup_entry = |worktree_path: Option<String>, branch: Option<String>| -> Result<()> {
+        let Some(worktree_path) = worktree_path else {
+            return Ok(());
+        };
+
+        let path = PathBuf::from(&worktree_path);
+        let comparable_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        if !comparable_path.starts_with(&wt_root) {
+            return Ok(());
+        }
+
+        if branch
+            .as_deref()
+            .is_some_and(|name| name.starts_with("crongen/"))
+        {
+            remove_worktree(repo_path, &worktree_path, true)?;
+        } else {
+            let output = Command::new("git")
+                .current_dir(repo_path)
+                .args(["worktree", "remove", "--force", &worktree_path])
+                .output()
+                .context("Failed to execute git worktree remove")?;
+
+            if !output.status.success() && path.exists() {
+                std::fs::remove_dir_all(&path).with_context(|| {
+                    format!("Failed to remove worktree directory: {worktree_path}")
+                })?;
+            }
+        }
+
+        removed.push(worktree_path);
+        Ok(())
+    };
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            cleanup_entry(current_worktree.take(), current_branch.take())?;
+            current_worktree = Some(path.to_string());
+        } else if let Some(branch) = line.strip_prefix("branch refs/heads/") {
+            current_branch = Some(branch.to_string());
+        }
+    }
+    cleanup_entry(current_worktree, current_branch)?;
+
+    let _ = Command::new("git")
+        .current_dir(repo_path)
+        .args(["worktree", "prune"])
+        .output();
+
+    if wt_root.exists() {
+        std::fs::remove_dir_all(&wt_root).with_context(|| {
+            format!(
+                "Failed to remove worktrees directory: {}",
+                wt_root.display()
+            )
+        })?;
+    }
+
+    Ok(removed)
 }
 
 // ─── Branch Diff ─────────────────────────────────────────────
@@ -676,7 +729,7 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        create_branch_at_and_checkout, ensure_worktrees_excluded, get_current_commit,
+        cleanup_crongen_worktrees, create_branch_at_and_checkout, get_current_commit,
         validate_feature_branch_name,
     };
     use std::{fs, path::PathBuf, process::Command};
@@ -760,16 +813,54 @@ mod tests {
     }
 
     #[test]
-    fn ensure_worktrees_excluded_hides_crongen_worktree_dir() {
+    fn cleanup_crongen_worktrees_removes_generated_worktrees_and_branches() {
         let repo_path = temp_repo_path();
         fs::create_dir_all(&repo_path).expect("create temp repo");
 
         run_git(&repo_path, &["init", "-b", "main"]);
-        fs::create_dir_all(repo_path.join(".crongen-worktrees/example"))
-            .expect("create worktree dir");
+        run_git(&repo_path, &["config", "user.name", "crongen-test"]);
+        run_git(
+            &repo_path,
+            &["config", "user.email", "crongen-test@example.com"],
+        );
+        fs::write(repo_path.join("base.txt"), "base\n").expect("write base file");
+        run_git(&repo_path, &["add", "base.txt"]);
+        run_git(&repo_path, &["commit", "-m", "base"]);
 
-        ensure_worktrees_excluded(repo_path.to_str().expect("utf8 path"))
-            .expect("exclude worktrees");
+        let first_worktree = repo_path.join(".crongen-worktrees/crongen-first-1");
+        let second_worktree = repo_path.join(".crongen-worktrees/crongen-second-2");
+        run_git(
+            &repo_path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "crongen/first/1",
+                first_worktree.to_str().expect("utf8 worktree path"),
+            ],
+        );
+        run_git(
+            &repo_path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "crongen/second/2",
+                second_worktree.to_str().expect("utf8 worktree path"),
+            ],
+        );
+
+        let status_before = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["status", "--short"])
+            .output()
+            .expect("git status before cleanup");
+        assert!(String::from_utf8_lossy(&status_before.stdout).contains(".crongen-worktrees/"));
+
+        cleanup_crongen_worktrees(repo_path.to_str().expect("utf8 path"))
+            .expect("cleanup crongen worktrees");
+
+        assert!(!repo_path.join(".crongen-worktrees").exists());
 
         let status = Command::new("git")
             .current_dir(&repo_path)
@@ -778,6 +869,14 @@ mod tests {
             .expect("git status");
         assert!(status.status.success());
         assert_eq!(String::from_utf8_lossy(&status.stdout), "");
+
+        let branches = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["branch", "--list", "crongen/*"])
+            .output()
+            .expect("git branch list");
+        assert!(branches.status.success());
+        assert_eq!(String::from_utf8_lossy(&branches.stdout), "");
 
         let _ = fs::remove_dir_all(repo_path);
     }
