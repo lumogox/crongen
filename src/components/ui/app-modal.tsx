@@ -41,11 +41,11 @@ function AppModalContent({
       {...props}
     >
       <div className={cn("flex max-h-[inherit] min-h-0 w-full flex-col overflow-hidden rounded-lg", shellClassName)}>
-        <div className="relative z-10 flex min-h-10 shrink-0 items-center justify-between gap-3 border-b border-slate-700/70 px-5 sm:px-6">
+        <div className="relative z-10 flex min-h-10 shrink-0 items-center gap-3 border-b border-slate-700/70 pl-5 pr-2 sm:pl-6 sm:pr-2">
           <div className="min-w-0 truncate text-[11px] uppercase tracking-[0.22em] text-sky-300/80">
             {titleBarLabel}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {titleBarActions}
             {showTitleBarClose && onClose && (
               <Button
