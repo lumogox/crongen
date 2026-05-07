@@ -545,6 +545,7 @@ fn build_merge_resolution_invocation(
             ));
             let mut args = vec![
                 "exec".to_string(),
+                "--ignore-user-config".to_string(),
                 "--skip-git-repo-check".to_string(),
                 "--sandbox".to_string(),
                 "workspace-write".to_string(),
@@ -3268,6 +3269,10 @@ mod tests {
         .expect("codex invocation");
 
         assert_eq!(invocation.program, "codex");
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--ignore-user-config"));
         assert!(
             invocation
                 .args

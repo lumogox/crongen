@@ -289,6 +289,7 @@ fn build_planner_invocation(
             let schema_file = write_plan_output_schema()?;
             let mut args = vec![
                 "exec".to_string(),
+                "--ignore-user-config".to_string(),
                 "--skip-git-repo-check".to_string(),
                 "--sandbox".to_string(),
                 "read-only".to_string(),
@@ -822,6 +823,10 @@ mod tests {
 
         assert_eq!(invocation.program, "codex");
         assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--ignore-user-config"));
         assert!(
             invocation
                 .args

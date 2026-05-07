@@ -89,7 +89,7 @@ export const CODEX_TEMPLATE: AgentTypeTemplate = {
   } satisfies CodexConfig,
   buildCommandPreview: (prompt, config) => {
     const cfg = config as CodexConfig;
-    const parts = ["codex", "exec", "--json"];
+    const parts = ["codex", "exec", "--ignore-user-config", "--json"];
     if (cfg.model) parts.push("--model", cfg.model);
     const sandbox = codexSandboxPreviewValue(cfg);
     if (sandbox) parts.push("--sandbox", sandbox);

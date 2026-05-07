@@ -3,6 +3,8 @@ use crate::models::{
     SdkExecution, ShellExecution,
 };
 
+const CODEX_IGNORE_USER_CONFIG_ARG: &str = "--ignore-user-config";
+
 /// Builds the execution mode for a given agent type and prompt.
 ///
 /// Claude Code, Codex, and Gemini use structured SDK mode.
@@ -237,6 +239,7 @@ fn build_codex_exec_command(
     let mut args = Vec::new();
 
     args.push("exec".to_string());
+    args.push(CODEX_IGNORE_USER_CONFIG_ARG.to_string());
     args.push("--json".to_string());
 
     // Optional flags
@@ -456,6 +459,7 @@ mod tests {
 
         assert_eq!(sdk.program, "codex");
         assert!(sdk.args.iter().any(|arg| arg == "exec"));
+        assert!(sdk.args.iter().any(|arg| arg == "--ignore-user-config"));
         assert!(sdk.args.iter().any(|arg| arg == "--json"));
         assert!(sdk.args.iter().any(|arg| arg == "--skip-git-repo-check"));
         assert_eq!(sdk.args.last().map(String::as_str), Some("-"));
@@ -516,6 +520,7 @@ mod tests {
             _ => panic!("codex should use SDK execution"),
         };
 
+        assert!(sdk.args.iter().any(|arg| arg == "--ignore-user-config"));
         assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
         assert!(sdk.args.iter().any(|arg| arg == "--sandbox"));
         assert!(sdk.args.iter().any(|arg| arg == "workspace-write"));
@@ -544,6 +549,7 @@ mod tests {
             _ => panic!("codex should use SDK execution"),
         };
 
+        assert!(sdk.args.iter().any(|arg| arg == "--ignore-user-config"));
         assert!(!sdk.args.iter().any(|arg| arg == "--full-auto"));
         assert!(!sdk.args.iter().any(|arg| arg == "--sandbox"));
     }
