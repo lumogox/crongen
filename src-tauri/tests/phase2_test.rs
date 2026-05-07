@@ -229,6 +229,119 @@ fn test_db_init_creates_project_schema_and_crud() {
 }
 
 #[test]
+fn test_node_delete_branch_removes_subtree_with_foreign_keys() {
+    let conn = Connection::open_in_memory().unwrap();
+    db::db_init(&conn).unwrap();
+
+    conn.execute(
+        "INSERT INTO projects (id, name, prompt, shell, repo_path,
+         is_active, agent_type, type_config, project_mode, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![
+            "project-delete",
+            "Delete Test",
+            "Refine flow",
+            "codex",
+            "/tmp",
+            1,
+            "codex",
+            "{}",
+            "existing",
+            1_000,
+            1_000,
+        ],
+    )
+    .unwrap();
+
+    let root_node = models::DecisionNode {
+        id: "delete-root".to_string(),
+        project_id: "project-delete".to_string(),
+        parent_id: None,
+        label: "Root".to_string(),
+        prompt: "Root prompt".to_string(),
+        branch_name: "structural/task/delete-root".to_string(),
+        worktree_path: None,
+        commit_hash: None,
+        status: models::NodeStatus::Pending,
+        exit_code: None,
+        node_type: Some("task".to_string()),
+        scheduled_at: None,
+        started_at: None,
+        created_at: 1_000,
+        updated_at: 1_000,
+    };
+    db::node_create(&conn, &root_node).unwrap();
+
+    let child_node = models::DecisionNode {
+        id: "delete-child".to_string(),
+        project_id: "project-delete".to_string(),
+        parent_id: Some("delete-root".to_string()),
+        label: "Child".to_string(),
+        prompt: "Child prompt".to_string(),
+        branch_name: "structural/agent/delete-child".to_string(),
+        worktree_path: None,
+        commit_hash: None,
+        status: models::NodeStatus::Pending,
+        exit_code: None,
+        node_type: Some("agent".to_string()),
+        scheduled_at: None,
+        started_at: None,
+        created_at: 1_001,
+        updated_at: 1_001,
+    };
+    db::node_create(&conn, &child_node).unwrap();
+
+    let grandchild_node = models::DecisionNode {
+        id: "delete-grandchild".to_string(),
+        project_id: "project-delete".to_string(),
+        parent_id: Some("delete-child".to_string()),
+        label: "Grandchild".to_string(),
+        prompt: "Grandchild prompt".to_string(),
+        branch_name: "structural/final/delete-grandchild".to_string(),
+        worktree_path: None,
+        commit_hash: None,
+        status: models::NodeStatus::Pending,
+        exit_code: None,
+        node_type: Some("final".to_string()),
+        scheduled_at: None,
+        started_at: None,
+        created_at: 1_002,
+        updated_at: 1_002,
+    };
+    db::node_create(&conn, &grandchild_node).unwrap();
+    db::orchestrator_upsert(&conn, "delete-root", "auto", "idle", None).unwrap();
+
+    let deleted = db::node_delete_branch(&conn, "delete-root").unwrap();
+
+    assert_eq!(
+        deleted,
+        vec![
+            "delete-grandchild".to_string(),
+            "delete-child".to_string(),
+            "delete-root".to_string()
+        ]
+    );
+
+    let node_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM decision_nodes WHERE project_id = ?1",
+            rusqlite::params!["project-delete"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(node_count, 0);
+
+    let session_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM orchestrator_sessions WHERE session_root_id = ?1",
+            rusqlite::params!["delete-root"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(session_count, 0);
+}
+
+#[test]
 fn test_db_init_resets_legacy_agent_schema() {
     let conn = Connection::open_in_memory().unwrap();
 

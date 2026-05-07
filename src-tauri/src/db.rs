@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::models::{AgentType, AgentTypeConfig, DecisionNode, NodeStatus, Project};
@@ -387,22 +387,30 @@ pub fn node_has_active_session(conn: &Connection, project_id: &str) -> Result<bo
 }
 
 pub fn node_delete_branch(conn: &Connection, id: &str) -> Result<Vec<String>> {
-    // Collect all node IDs in this branch (node + all descendants) via recursive CTE
+    // Collect node IDs deepest-first so self-referential parent_id constraints
+    // are satisfied while deleting a subtree.
     let mut stmt = conn.prepare(
-        "WITH RECURSIVE branch(nid) AS (
-            SELECT id FROM decision_nodes WHERE id = ?1
+        "WITH RECURSIVE branch(nid, depth) AS (
+            SELECT id, 0 FROM decision_nodes WHERE id = ?1
             UNION ALL
-            SELECT dn.id FROM decision_nodes dn
+            SELECT dn.id, b.depth + 1 FROM decision_nodes dn
             JOIN branch b ON dn.parent_id = b.nid
         )
-        SELECT nid FROM branch",
+        SELECT nid FROM branch
+        ORDER BY depth DESC",
     )?;
 
     let node_ids: Vec<String> = stmt
         .query_map(params![id], |row| row.get(0))?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Delete all nodes in the branch
+    for nid in &node_ids {
+        conn.execute(
+            "DELETE FROM orchestrator_sessions WHERE session_root_id = ?1",
+            params![nid],
+        )?;
+    }
+
     for nid in &node_ids {
         conn.execute("DELETE FROM decision_nodes WHERE id = ?1", params![nid])?;
     }
