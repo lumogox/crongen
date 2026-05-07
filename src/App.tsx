@@ -424,11 +424,14 @@ function App() {
 
   const planningProviderStatus = getProviderStatus(settings.planning_agent);
   const executionDefaultStatus = getProviderStatus(settings.execution_agent);
+  const selectedProjectEffectiveExecutionAgent = selectedProject
+    ? settings.execution_agent ?? selectedProject.agent_type
+    : settings.execution_agent;
   const selectedProjectExecutionStatus = useMemo<AgentProviderReadiness | null>(() => {
-    if (!selectedProject) {
+    if (!selectedProjectEffectiveExecutionAgent) {
       return null;
     }
-    if (selectedProject.agent_type === "custom") {
+    if (selectedProjectEffectiveExecutionAgent === "custom") {
       return {
         agent_type: "custom",
         status: "ready",
@@ -439,8 +442,8 @@ function App() {
         coming_soon: false,
       };
     }
-    return getProviderStatus(selectedProject.agent_type);
-  }, [getProviderStatus, selectedProject]);
+    return getProviderStatus(selectedProjectEffectiveExecutionAgent);
+  }, [getProviderStatus, selectedProjectEffectiveExecutionAgent]);
 
   const hasReadyPlanningDefault = !!settings.planning_agent && !!planningProviderStatus?.ready;
   const hasReadyExecutionDefault = !!settings.execution_agent && !!executionDefaultStatus?.ready;
@@ -461,8 +464,8 @@ function App() {
       issues.push(`${getAgentLabel(settings.execution_agent)} is not ready by default`);
     }
 
-    if (selectedProject && selectedProjectExecutionStatus && !selectedProjectExecutionStatus.ready) {
-      issues.push(`${selectedProject.name} cannot run because ${getAgentLabel(selectedProject.agent_type)} is not ready`);
+    if (selectedProject && selectedProjectEffectiveExecutionAgent && selectedProjectExecutionStatus && !selectedProjectExecutionStatus.ready) {
+      issues.push(`${selectedProject.name} cannot run because ${getAgentLabel(selectedProjectEffectiveExecutionAgent)} is not ready`);
     }
 
     if (issues.length === 0) return null;
@@ -472,6 +475,7 @@ function App() {
     executionDefaultStatus,
     planningProviderStatus,
     selectedProject,
+    selectedProjectEffectiveExecutionAgent,
     selectedProjectExecutionStatus,
     settings.execution_agent,
     settings.planning_agent,
@@ -1355,7 +1359,7 @@ function App() {
           onGeneratePlan={handleGeneratePlan}
           isGenerating={isGeneratingPlan}
           planningAgentLabel={getAgentLabel(settings.planning_agent)}
-          executionAgentLabel={selectedProject ? getAgentLabel(selectedProject.agent_type) : getAgentLabel(settings.execution_agent)}
+          executionAgentLabel={getAgentLabel(selectedProjectEffectiveExecutionAgent)}
           planningStatus={planningProviderStatus}
           executionStatus={selectedProjectExecutionStatus}
           onOpenAgentSetup={(role) => openAgentBay({ focusRole: role })}
