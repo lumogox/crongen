@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{broadcast, oneshot, Mutex as TokioMutex};
+use tokio::sync::{Mutex as TokioMutex, broadcast, oneshot};
 
 use crate::agent_templates;
 use crate::context;
@@ -318,8 +318,13 @@ async fn orchestration_loop(
 
     let mut execution_order = Vec::new();
     linearize(&root_id, &node_map, &children_map, &mut execution_order);
+    let mut processed_nodes = HashSet::<String>::new();
 
     for node_id in &execution_order {
+        if processed_nodes.contains(node_id) {
+            continue;
+        }
+
         // Check for cancellation
         if cancel_rx.try_recv().is_ok() {
             return Err("Orchestrator cancelled".to_string());
@@ -330,6 +335,29 @@ async fn orchestration_loop(
             .ok_or_else(|| format!("Node {} not found in subtree", node_id))?;
 
         let node_type = node.node_type.as_deref().unwrap_or("agent");
+
+        if let Some(branch_ids) = parallel_decision_branch_nodes(node, &node_map, &children_map) {
+            if branch_ids.len() > 1 {
+                for branch_id in &branch_ids {
+                    processed_nodes.insert(branch_id.clone());
+                }
+
+                run_parallel_nodes(
+                    session_id,
+                    &branch_ids,
+                    &db,
+                    &pty,
+                    &sdk,
+                    &app,
+                    status.clone(),
+                    pty_rx,
+                    sdk_rx,
+                    &mut cancel_rx,
+                )
+                .await?;
+                continue;
+            }
+        }
 
         // Update status
         {
@@ -560,6 +588,121 @@ async fn orchestration_loop(
     Ok(())
 }
 
+fn is_decision_branch_node(node: &DecisionNode) -> bool {
+    !matches!(
+        node.node_type.as_deref().unwrap_or("agent"),
+        "decision" | "merge" | "final"
+    )
+}
+
+fn parallel_decision_branch_nodes(
+    node: &DecisionNode,
+    node_map: &HashMap<String, DecisionNode>,
+    children_map: &HashMap<String, Vec<String>>,
+) -> Option<Vec<String>> {
+    let parent_id = node.parent_id.as_ref()?;
+    let parent = node_map.get(parent_id)?;
+    if parent.node_type.as_deref() != Some("decision") || !is_decision_branch_node(node) {
+        return None;
+    }
+
+    let sibling_ids = children_map.get(parent_id)?;
+    let branch_ids = sibling_ids
+        .iter()
+        .filter_map(|sibling_id| {
+            let sibling = node_map.get(sibling_id)?;
+            is_decision_branch_node(sibling).then(|| sibling_id.clone())
+        })
+        .collect::<Vec<_>>();
+
+    branch_ids.contains(&node.id).then_some(branch_ids)
+}
+
+async fn run_parallel_nodes(
+    session_id: &str,
+    node_ids: &[String],
+    db: &Arc<Mutex<Connection>>,
+    pty: &Arc<PtyManager>,
+    sdk: &Arc<SdkManager>,
+    app: &AppHandle,
+    status: Arc<TokioMutex<OrchestratorStatus>>,
+    pty_rx: &mut broadcast::Receiver<SessionCompletion>,
+    sdk_rx: &mut broadcast::Receiver<SessionCompletion>,
+    cancel_rx: &mut oneshot::Receiver<()>,
+) -> Result<(), String> {
+    let runnable = fetch_runnable_batch(node_ids, db).await?;
+    if runnable.is_empty() {
+        return Ok(());
+    }
+
+    {
+        let mut s = status.lock().await;
+        s.current_node_id = runnable.first().cloned();
+        s.state = OrchestratorState::Running;
+        s.pending_decision = None;
+    }
+
+    {
+        let db_c = db.clone();
+        let sid = session_id.to_string();
+        let current = runnable.first().cloned();
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = db_c.lock().ok()?;
+            db::orchestrator_update_state(&conn, &sid, "running", current.as_deref()).ok()
+        })
+        .await;
+    }
+
+    for node_id in &runnable {
+        let current_status = fetch_node_status(node_id, db).await?;
+        if current_status == NodeStatus::Pending {
+            run_single_node(node_id, db, pty, sdk, app).await?;
+        }
+    }
+
+    wait_for_parallel_completion(session_id, runnable, pty_rx, sdk_rx, cancel_rx, status, app).await
+}
+
+async fn fetch_runnable_batch(
+    node_ids: &[String],
+    db: &Arc<Mutex<Connection>>,
+) -> Result<Vec<String>, String> {
+    let ids = node_ids.to_vec();
+    let db_c = db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_c.lock().map_err(|e| format!("DB lock: {e}"))?;
+        let mut runnable = Vec::new();
+        for node_id in ids {
+            let node = db::node_get_by_id(&conn, &node_id).map_err(|e| format!("{e}"))?;
+            if matches!(
+                node.status,
+                NodeStatus::Pending | NodeStatus::Running | NodeStatus::Paused
+            ) {
+                runnable.push(node_id);
+            }
+        }
+        Ok::<Vec<String>, String>(runnable)
+    })
+    .await
+    .map_err(|e| format!("Task: {e}"))?
+}
+
+async fn fetch_node_status(
+    node_id: &str,
+    db: &Arc<Mutex<Connection>>,
+) -> Result<NodeStatus, String> {
+    let nid = node_id.to_string();
+    let db_c = db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_c.lock().map_err(|e| format!("DB lock: {e}"))?;
+        db::node_get_by_id(&conn, &nid)
+            .map(|node| node.status)
+            .map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task: {e}"))?
+}
+
 // ─── Helper: Run a single node ──────────────────────────────────
 
 async fn run_single_node(
@@ -695,14 +838,15 @@ async fn run_single_node(
 
     // Create worktree
     let branch_name = format!(
-        "crongen/{}/{}",
+        "crongen/{}/{}-{}",
         node.label
             .to_lowercase()
             .chars()
             .map(|c| if c.is_alphanumeric() { c } else { '-' })
             .collect::<String>()
             .trim_matches('-'),
-        db::now_unix()
+        db::now_unix(),
+        node.id.chars().take(8).collect::<String>()
     );
     let repo_path = project.repo_path.clone();
     let branch = branch_name.clone();
@@ -863,5 +1007,91 @@ async fn wait_for_completion(
                 return Err("Orchestrator cancelled".to_string());
             }
         }
+    }
+}
+
+async fn wait_for_parallel_completion(
+    session_id: &str,
+    node_ids: Vec<String>,
+    pty_rx: &mut broadcast::Receiver<SessionCompletion>,
+    sdk_rx: &mut broadcast::Receiver<SessionCompletion>,
+    cancel_rx: &mut oneshot::Receiver<()>,
+    status: Arc<TokioMutex<OrchestratorStatus>>,
+    app: &AppHandle,
+) -> Result<(), String> {
+    let mut pending = node_ids.into_iter().collect::<HashSet<_>>();
+    let mut first_error: Option<String> = None;
+
+    while !pending.is_empty() {
+        tokio::select! {
+            result = pty_rx.recv() => {
+                match result {
+                    Ok(completion) if pending.contains(&completion.node_id) => {
+                        if let Some(error) = handle_parallel_completion(session_id, completion, &mut pending, &status, app).await {
+                            first_error.get_or_insert(error);
+                        }
+                    }
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {
+                        return Err("PTY completion channel closed".to_string());
+                    }
+                }
+            }
+            result = sdk_rx.recv() => {
+                match result {
+                    Ok(completion) if pending.contains(&completion.node_id) => {
+                        if let Some(error) = handle_parallel_completion(session_id, completion, &mut pending, &status, app).await {
+                            first_error.get_or_insert(error);
+                        }
+                    }
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => {
+                        return Err("SDK completion channel closed".to_string());
+                    }
+                }
+            }
+            _ = &mut *cancel_rx => {
+                return Err("Orchestrator cancelled".to_string());
+            }
+        }
+    }
+
+    if let Some(error) = first_error {
+        Err(error)
+    } else {
+        Ok(())
+    }
+}
+
+async fn handle_parallel_completion(
+    session_id: &str,
+    completion: SessionCompletion,
+    pending: &mut HashSet<String>,
+    status: &Arc<TokioMutex<OrchestratorStatus>>,
+    app: &AppHandle,
+) -> Option<String> {
+    pending.remove(&completion.node_id);
+    match completion.exit_code {
+        Some(0) => {
+            let mut s = status.lock().await;
+            s.completed_count += 1;
+            let payload = OrchestratorProgressPayload {
+                session_id: session_id.to_string(),
+                node_id: completion.node_id,
+                status: "completed".to_string(),
+                completed_count: s.completed_count,
+                total_count: s.total_count,
+            };
+            drop(s);
+            let _ = app.emit("orchestrator_progress", payload);
+            None
+        }
+        Some(code) => Some(format!(
+            "Node {} failed with exit code {}",
+            completion.node_id, code
+        )),
+        None => Some(format!("Node {} exited without status", completion.node_id)),
     }
 }
