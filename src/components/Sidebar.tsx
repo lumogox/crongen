@@ -14,6 +14,7 @@ interface SidebarProps {
   selectedSessionId?: string | null;
   onSelectSession?: (id: string | null) => void;
   onCreateSession?: () => void;
+  onDeleteSession?: (session: DecisionNode) => void;
 }
 
 export function Sidebar({
@@ -28,6 +29,7 @@ export function Sidebar({
   selectedSessionId,
   onSelectSession,
   onCreateSession,
+  onDeleteSession,
 }: SidebarProps) {
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
 
@@ -156,6 +158,7 @@ export function Sidebar({
                 session={session}
                 isSelected={session.id === selectedSessionId}
                 onSelect={() => onSelectSession?.(session.id)}
+                onDelete={() => onDeleteSession?.(session)}
               />
             ))}
           </div>

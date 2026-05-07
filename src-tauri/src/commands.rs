@@ -15,8 +15,8 @@ use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
     CodexModelCatalog, CodexModelOption, CodexReasoningLevel, DecisionNode, ExecutionMode,
-    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode, OrchestratorStatus,
-    Project,
+    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode, OrchestratorState,
+    OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -569,6 +569,17 @@ fn active_session_backend(
 
 fn manual_terminal_session_id(node_id: &str) -> String {
     format!("manual-terminal:{node_id}")
+}
+
+fn node_has_active_runtime(state: &AppState, node: &DecisionNode) -> bool {
+    matches!(node.status, NodeStatus::Running | NodeStatus::Paused)
+        || active_session_backend(state.pty.as_ref(), state.sdk.as_ref(), &node.id).is_some()
+        || active_session_backend(
+            state.pty.as_ref(),
+            state.sdk.as_ref(),
+            &manual_terminal_session_id(&node.id),
+        )
+        .is_some()
 }
 
 fn resolve_node_terminal_cwd(node: &DecisionNode, project: &Project) -> String {
@@ -1545,13 +1556,25 @@ pub async fn delete_node_branch(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    // 2. Remove worktree if it exists
-    if let Some(wt_path) = &node.worktree_path {
-        let repo = project.repo_path.clone();
-        let wt = wt_path.clone();
-        let _ = tokio::task::spawn_blocking(move || git_manager::remove_worktree(&repo, &wt, true))
-            .await;
-    }
+    let db4 = db2.clone();
+    let subtree_root = node_id.clone();
+    let nodes = tokio::task::spawn_blocking(move || {
+        let conn = db4.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_get_subtree(&conn, &subtree_root).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    // 2. Remove worktrees from this node and all descendants
+    let repo = project.repo_path.clone();
+    let worktree_paths: Vec<String> = nodes
+        .iter()
+        .filter_map(|node| node.worktree_path.clone())
+        .collect();
+    tokio::task::spawn_blocking(move || git_manager::cleanup_worktrees(&repo, &worktree_paths))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .map_err(|e| format!("{e}"))?;
 
     // 3. Delete node + descendants from DB
     let nid = node_id.clone();
@@ -1567,6 +1590,87 @@ pub async fn delete_node_branch(
         node_id,
         deleted_ids.len()
     );
+    Ok(deleted_ids)
+}
+
+#[tauri::command]
+pub async fn delete_session(
+    state: State<'_, AppState>,
+    session_root_id: String,
+) -> Result<Vec<String>, String> {
+    let db = state.db.clone();
+    let sid = session_root_id.clone();
+
+    let (root, project, nodes) = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let root = db::node_get_by_id(&conn, &sid).map_err(|e| format!("{e}"))?;
+        if root.parent_id.is_some() {
+            return Err("Only complete sessions can be deleted from the session list.".to_string());
+        }
+
+        let project = db::project_get_by_id(&conn, &root.project_id).map_err(|e| format!("{e}"))?;
+        let nodes = db::node_get_subtree(&conn, &root.id).map_err(|e| format!("{e}"))?;
+        Ok((root, project, nodes))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    if matches!(
+        state
+            .orchestrator
+            .get_status(&session_root_id)
+            .await
+            .map(|status| status.state),
+        Some(OrchestratorState::Running | OrchestratorState::WaitingUser)
+    ) {
+        return Err(
+            "Stop or finish the active orchestrator before deleting this session.".to_string(),
+        );
+    }
+
+    if nodes
+        .iter()
+        .any(|node| node_has_active_runtime(state.inner(), node))
+    {
+        return Err(
+            "Stop active agent or terminal sessions before deleting this session.".to_string(),
+        );
+    }
+
+    let repo = project.repo_path.clone();
+    let worktree_paths: Vec<String> = nodes
+        .iter()
+        .filter_map(|node| node.worktree_path.clone())
+        .collect();
+    tokio::task::spawn_blocking(move || git_manager::cleanup_worktrees(&repo, &worktree_paths))
+        .await
+        .map_err(|e| format!("Task error: {e}"))?
+        .map_err(|e| format!("{e}"))?;
+
+    let db = state.db.clone();
+    let sid = session_root_id.clone();
+    let deleted_ids = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_delete_branch(&conn, &sid).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    for node_id in &deleted_ids {
+        state.pty.clear_session_artifacts(node_id);
+        state.sdk.clear_session_artifacts(node_id);
+        let manual_session_id = manual_terminal_session_id(node_id);
+        state.pty.clear_session_artifacts(&manual_session_id);
+        state.sdk.clear_session_artifacts(&manual_session_id);
+    }
+
+    log::info!(
+        "Deleted session {} ({}): {} nodes removed",
+        root.id,
+        root.label,
+        deleted_ids.len()
+    );
+
     Ok(deleted_ids)
 }
 

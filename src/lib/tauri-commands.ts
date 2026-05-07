@@ -148,6 +148,12 @@ export async function deleteNodeBranch(
   return invoke("delete_node_branch", { nodeId });
 }
 
+export async function deleteSession(
+  sessionRootId: string,
+): Promise<string[]> {
+  return invoke("delete_session", { sessionRootId });
+}
+
 // ─── PTY Commands ─────────────────────────────────────────────
 
 export async function writePty(

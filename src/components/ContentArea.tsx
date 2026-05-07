@@ -42,6 +42,7 @@ interface ContentAreaProps {
   selectedSessionId: string | null;
   onSelectSession: (id: string | null) => void;
   onCreateSession: () => void;
+  onDeleteSession: (session: DecisionNode) => void;
   onRunNode: (nodeId: string) => void;
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
   orchestratorStatus: OrchestratorStatus | null;
@@ -157,6 +158,7 @@ function ContentAreaInner({
   selectedSessionId,
   onSelectSession,
   onCreateSession,
+  onDeleteSession,
   onRunNode,
   onUpdateNode,
   orchestratorStatus,
@@ -462,6 +464,7 @@ function ContentAreaInner({
             selectedSessionId={selectedSessionId}
             onSelectSession={onSelectSession}
             onCreateSession={onCreateSession}
+            onDeleteSession={onDeleteSession}
           />
         </div>
 

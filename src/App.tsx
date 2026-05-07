@@ -26,6 +26,7 @@ import {
   createStructuralNode,
   mergeNodeBranch,
   deleteNodeBranch,
+  deleteSession,
   writePty,
   openNodeTerminal,
   pauseSession,
@@ -52,6 +53,7 @@ import { createDefaultAgentConfigs, getAgentLabel } from "./lib/agent-templates"
 import { ContentArea } from "./components/ContentArea";
 import { ProjectModal } from "./components/ProjectModal";
 import { DeleteConfirm } from "./components/DeleteConfirm";
+import { DeleteSessionConfirm } from "./components/DeleteSessionConfirm";
 import { ForkModal } from "./components/ForkModal";
 import { SessionModal } from "./components/SessionModal";
 import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
@@ -957,6 +959,34 @@ function App() {
     }
   }, [modal]);
 
+  const handleDeleteSession = useCallback((session: DecisionNode) => {
+    setModal({ kind: "delete_session", session });
+  }, []);
+
+  const handleConfirmDeleteSession = useCallback(async () => {
+    if (modal?.kind !== "delete_session") return;
+    try {
+      const deletedIds = await deleteSession(modal.session.id);
+      const deletedSet = new Set(deletedIds);
+      setSessions((prev) => prev.filter((session) => !deletedSet.has(session.id)));
+      setTreeNodes((prev) => prev.filter((node) => !deletedSet.has(node.id)));
+      setSelectedSessionId((prev) => (prev && deletedSet.has(prev) ? null : prev));
+      setSelectedNodeId((prev) => (prev && deletedSet.has(prev) ? null : prev));
+      setManualTerminalSessions((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).filter(([nodeId]) => !deletedSet.has(nodeId)),
+        ),
+      );
+      setOrchestratorStatus((prev) =>
+        prev && deletedSet.has(prev.session_id) ? null : prev,
+      );
+      setSuccess("Session deleted and generated worktrees cleaned up");
+      setModal(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [modal]);
+
   // ─── Orchestrator handlers ────────────────────────────────
 
   const handleStartOrchestrator = useCallback(
@@ -1225,6 +1255,7 @@ function App() {
             selectedSessionId={selectedSessionId}
             onSelectSession={setSelectedSessionId}
             onCreateSession={() => setModal({ kind: "create_session" })}
+            onDeleteSession={handleDeleteSession}
             onRunNode={handleRunNode}
             onUpdateNode={handleUpdateNode}
             orchestratorStatus={orchestratorStatus}
@@ -1289,6 +1320,13 @@ function App() {
         <DeleteNodeConfirm
           node={modal.node}
           onConfirm={handleConfirmDeleteNode}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === "delete_session" && (
+        <DeleteSessionConfirm
+          session={modal.session}
+          onConfirm={handleConfirmDeleteSession}
           onClose={() => setModal(null)}
         />
       )}

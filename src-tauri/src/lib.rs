@@ -79,6 +79,7 @@ pub fn run() {
             commands::merge_node_branch,
             commands::get_merge_preview,
             commands::delete_node_branch,
+            commands::delete_session,
             // Utility
             commands::check_executable,
             commands::check_env_var,

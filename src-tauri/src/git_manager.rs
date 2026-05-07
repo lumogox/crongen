@@ -349,6 +349,37 @@ pub fn cleanup_crongen_worktrees(repo_path: &str) -> Result<Vec<String>> {
     Ok(removed)
 }
 
+/// Remove a selected set of worktrees and delete their checked-out branches.
+pub fn cleanup_worktrees(repo_path: &str, worktree_paths: &[String]) -> Result<Vec<String>> {
+    let mut removed = Vec::new();
+
+    for worktree_path in worktree_paths {
+        if !Path::new(worktree_path).exists() {
+            continue;
+        }
+
+        remove_worktree(repo_path, worktree_path, true)?;
+        removed.push(worktree_path.clone());
+    }
+
+    let wt_root = worktrees_dir(repo_path);
+    if wt_root.exists()
+        && wt_root
+            .read_dir()
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false)
+    {
+        std::fs::remove_dir(&wt_root).with_context(|| {
+            format!(
+                "Failed to remove empty worktrees directory: {}",
+                wt_root.display()
+            )
+        })?;
+    }
+
+    Ok(removed)
+}
+
 // ─── Branch Diff ─────────────────────────────────────────────
 
 /// Compute a diff between a base commit and a branch tip.
@@ -729,8 +760,8 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_crongen_worktrees, create_branch_at_and_checkout, get_current_commit,
-        validate_feature_branch_name,
+        cleanup_crongen_worktrees, cleanup_worktrees, create_branch_at_and_checkout,
+        get_current_commit, validate_feature_branch_name,
     };
     use std::{fs, path::PathBuf, process::Command};
 
@@ -877,6 +908,65 @@ mod tests {
             .expect("git branch list");
         assert!(branches.status.success());
         assert_eq!(String::from_utf8_lossy(&branches.stdout), "");
+
+        let _ = fs::remove_dir_all(repo_path);
+    }
+
+    #[test]
+    fn cleanup_worktrees_removes_only_selected_worktrees() {
+        let repo_path = temp_repo_path();
+        fs::create_dir_all(&repo_path).expect("create temp repo");
+
+        run_git(&repo_path, &["init", "-b", "main"]);
+        run_git(&repo_path, &["config", "user.name", "crongen-test"]);
+        run_git(
+            &repo_path,
+            &["config", "user.email", "crongen-test@example.com"],
+        );
+        fs::write(repo_path.join("base.txt"), "base\n").expect("write base file");
+        run_git(&repo_path, &["add", "base.txt"]);
+        run_git(&repo_path, &["commit", "-m", "base"]);
+
+        let selected_worktree = repo_path.join(".crongen-worktrees/crongen-selected-1");
+        let unrelated_worktree = repo_path.join(".crongen-worktrees/crongen-other-2");
+        run_git(
+            &repo_path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "crongen/selected/1",
+                selected_worktree.to_str().expect("utf8 worktree path"),
+            ],
+        );
+        run_git(
+            &repo_path,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "crongen/other/2",
+                unrelated_worktree.to_str().expect("utf8 worktree path"),
+            ],
+        );
+
+        cleanup_worktrees(
+            repo_path.to_str().expect("utf8 path"),
+            &[selected_worktree.to_string_lossy().to_string()],
+        )
+        .expect("cleanup selected worktree");
+
+        assert!(!selected_worktree.exists());
+        assert!(unrelated_worktree.exists());
+
+        let branches = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["branch", "--list", "crongen/*"])
+            .output()
+            .expect("git branch list");
+        let branches = String::from_utf8_lossy(&branches.stdout);
+        assert!(!branches.contains("crongen/selected/1"));
+        assert!(branches.contains("crongen/other/2"));
 
         let _ = fs::remove_dir_all(repo_path);
     }

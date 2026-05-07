@@ -216,6 +216,7 @@ export type ModalType =
   | { kind: "expand_plan"; parentId: string }
   | { kind: "refine_plan"; sessionId: string }
   | { kind: "delete_project"; project: Project }
+  | { kind: "delete_session"; session: DecisionNode }
   | { kind: "delete_node"; node: DecisionNode }
   | { kind: "create_session" }
   | { kind: "orchestrator_decision"; sessionId: string; decision: PendingDecision }
