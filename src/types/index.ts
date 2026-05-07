@@ -153,9 +153,11 @@ export interface DecisionNodeData {
   flowMode: "linear" | "branching";
   onRunNode: (nodeId: string) => void;
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeAgent: (nodeId: string, agentType: AgentType | null) => void;
   onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
   onDeleteNode: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
+  defaultExecutionAgent?: AgentType | null;
   isOrchestratorTarget?: boolean;
   debugMode?: boolean;
   onResetNode?: (nodeId: string) => void;

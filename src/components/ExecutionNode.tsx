@@ -11,7 +11,8 @@ import {
   RotateCcw,
   SquareTerminal,
 } from "lucide-react";
-import type { DecisionNodeData, NodeStatus } from "../types";
+import type { AgentType, DecisionNodeData, NodeStatus } from "../types";
+import { getAgentLabel } from "../lib/agent-templates";
 import { getNodeTypeMeta } from "../lib/node-type-inference";
 
 const statusConfig: Record<
@@ -51,6 +52,7 @@ const statusConfig: Record<
 };
 
 const structuralTypes = new Set(["decision", "merge", "final"]);
+const assignableAgents: AgentType[] = ["claude_code", "codex", "gemini"];
 
 function ExecutionNodeInner({
   data,
@@ -67,8 +69,10 @@ function ExecutionNodeInner({
     onFork: _onFork,
     onMerge,
     onRunNode,
+    onUpdateNodeAgent,
     onDeleteNode,
     onOpenNodeTerminal,
+    defaultExecutionAgent,
     isOrchestratorTarget,
     debugMode,
     onResetNode,
@@ -76,6 +80,11 @@ function ExecutionNodeInner({
   const typeMeta = getNodeTypeMeta(visualType);
   const TypeIcon = typeMeta.icon;
   const isStructural = structuralTypes.has(visualType);
+  const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent;
+  const canAssignAgent =
+    ["task", "agent", "merge", "final"].includes(visualType) &&
+    node.status === "pending" &&
+    !node.worktree_path;
 
   // For structural nodes with pending status, show "Needs review"
   const status = { ...statusConfig[node.status] };
@@ -232,8 +241,36 @@ function ExecutionNodeInner({
       </div>
 
       {/* Inline action bar */}
-      {actions.length > 0 && (
+      {(actions.length > 0 || canAssignAgent) && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-700/70 px-3 py-2">
+          {canAssignAgent && (
+            <label
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full border border-slate-600/70 bg-[#0f1726] px-2.5 py-1 text-[11px] text-slate-300"
+              title={`Execution agent${node.agent_type_override ? "" : `: default${effectiveAgent ? ` (${getAgentLabel(effectiveAgent)})` : ""}`}`}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <span className="shrink-0 text-slate-500">Agent</span>
+              <select
+                value={node.agent_type_override ?? ""}
+                onChange={(e) => {
+                  const nextAgent = e.target.value ? (e.target.value as AgentType) : null;
+                  onUpdateNodeAgent(node.id, nextAgent);
+                }}
+                className="nodrag min-w-0 flex-1 appearance-none bg-transparent text-slate-100 outline-none"
+                aria-label="Execution agent"
+              >
+                <option value="">
+                  {effectiveAgent ? `Default: ${getAgentLabel(effectiveAgent)}` : "Default"}
+                </option>
+                {assignableAgents.map((agent) => (
+                  <option key={agent} value={agent}>
+                    {getAgentLabel(agent)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {actions.map((action) => {
             const Icon = action.icon;
             return (

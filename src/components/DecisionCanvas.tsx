@@ -5,7 +5,7 @@ import {
   Controls,
   useReactFlow,
 } from "@xyflow/react";
-import type { DecisionNode } from "../types";
+import type { AgentType, DecisionNode } from "../types";
 import type { StructuralNodeType } from "../types/node-types";
 import { useTreeLayout } from "../hooks/useTreeLayout";
 import { ExecutionNode } from "./ExecutionNode";
@@ -27,8 +27,10 @@ interface DecisionCanvasProps {
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeAgent?: (nodeId: string, agentType: AgentType | null) => void;
   onDeleteNode?: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
+  defaultExecutionAgent?: AgentType | null;
   orchestratorCurrentNodeId?: string | null;
   orchestratorActive?: boolean;
   debugMode?: boolean;
@@ -62,8 +64,10 @@ export function DecisionCanvas({
   flowMode,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeAgent,
   onDeleteNode,
   onOpenNodeTerminal,
+  defaultExecutionAgent,
   orchestratorCurrentNodeId,
   orchestratorActive,
   debugMode,
@@ -105,8 +109,10 @@ export function DecisionCanvas({
     flowMode: flowMode ?? "branching",
     onRunNode: onRunNode ?? (() => {}),
     onUpdateNode: onUpdateNode ?? (() => {}),
+    onUpdateNodeAgent: onUpdateNodeAgent ?? (() => {}),
     onDeleteNode: onDeleteNode ?? (() => {}),
     onOpenNodeTerminal,
+    defaultExecutionAgent,
     orchestratorCurrentNodeId,
     debugMode,
     onResetNode,

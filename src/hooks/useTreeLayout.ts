@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import dagre from "@dagrejs/dagre";
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
-import type { DecisionNode, DecisionNodeData } from "../types";
+import type { AgentType, DecisionNode, DecisionNodeData } from "../types";
 import type { StructuralNodeType } from "../types/node-types";
 import { inferNodeType, inferEdgeVariant } from "../lib/node-type-inference";
 
@@ -18,8 +18,10 @@ interface UseTreeLayoutInput {
   flowMode?: "linear" | "branching";
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeAgent?: (nodeId: string, agentType: AgentType | null) => void;
   onDeleteNode?: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
+  defaultExecutionAgent?: AgentType | null;
   orchestratorCurrentNodeId?: string | null;
   debugMode?: boolean;
   onResetNode?: (nodeId: string) => void;
@@ -40,8 +42,10 @@ export function useTreeLayout({
   flowMode,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeAgent,
   onDeleteNode,
   onOpenNodeTerminal,
+  defaultExecutionAgent,
   orchestratorCurrentNodeId,
   debugMode,
   onResetNode,
@@ -109,8 +113,10 @@ export function useTreeLayout({
           flowMode: flowMode ?? "branching",
           onRunNode: onRunNode ?? (() => {}),
           onUpdateNode: onUpdateNode ?? (() => {}),
+          onUpdateNodeAgent: onUpdateNodeAgent ?? (() => {}),
           onDeleteNode: onDeleteNode ?? (() => {}),
           onOpenNodeTerminal,
+          defaultExecutionAgent,
           isOrchestratorTarget: orchestratorCurrentNodeId === node.id,
           debugMode,
           onResetNode,

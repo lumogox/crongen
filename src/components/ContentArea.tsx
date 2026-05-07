@@ -535,8 +535,10 @@ function ContentAreaInner({
                     flowMode={flowMode}
                     onRunNode={onRunNode}
                     onUpdateNode={onUpdateNode}
+                    onUpdateNodeAgent={onUpdateNodeAgent}
                     onDeleteNode={onDeleteNode}
                     onOpenNodeTerminal={onOpenNodeTerminal}
+                    defaultExecutionAgent={defaultExecutionAgent}
                     orchestratorCurrentNodeId={orchestratorStatus?.current_node_id}
                     orchestratorActive={!!showOrchestratorActivity}
                     debugMode={debugMode}
