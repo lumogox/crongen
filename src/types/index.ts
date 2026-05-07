@@ -214,6 +214,7 @@ export type ModalType =
   | { kind: "fork_node"; nodeId: string }
   | { kind: "create_structural_node"; parentId: string | null; nodeType: StructuralNodeType }
   | { kind: "expand_plan"; parentId: string }
+  | { kind: "refine_plan"; sessionId: string }
   | { kind: "delete_project"; project: Project }
   | { kind: "delete_node"; node: DecisionNode }
   | { kind: "create_session" }

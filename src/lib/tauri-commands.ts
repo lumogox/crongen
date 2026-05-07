@@ -317,3 +317,19 @@ export async function generatePlanChildren(
 ): Promise<DecisionNode[]> {
   return invoke("generate_plan_children", { projectId, parentId, prompt, complexity });
 }
+
+export async function refinePlan(params: {
+  projectId: string;
+  sessionRootId: string;
+  provider: string;
+  lenses: string[];
+  guidance?: string | null;
+}): Promise<DecisionNode[]> {
+  return invoke("refine_plan", {
+    projectId: params.projectId,
+    sessionRootId: params.sessionRootId,
+    provider: params.provider,
+    lenses: params.lenses,
+    guidance: params.guidance,
+  });
+}

@@ -41,6 +41,7 @@ import {
   cancelOrchestrator,
   generatePlan,
   generatePlanChildren,
+  refinePlan,
   getSettings,
   updateSettings,
   resetNodeStatus,
@@ -57,6 +58,7 @@ import { DeleteNodeConfirm } from "./components/DeleteNodeConfirm";
 import { OrchestratorDecisionModal } from "./components/OrchestratorDecisionModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { PlanExpansionModal } from "./components/PlanExpansionModal";
+import { RefinePlanModal } from "./components/RefinePlanModal";
 import { ConfirmOpenTerminalDialog, NodeTerminalDialog } from "./components/NodeTerminalDialog";
 import { inferFlowModeFromNodes } from "./lib/flow-mode";
 import type { StructuralNodeType } from "./types/node-types";
@@ -98,6 +100,7 @@ function App() {
   // ─── Orchestrator state ──────────────────────────────────
   const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [isRefiningPlan, setIsRefiningPlan] = useState(false);
 
   // ─── Current branch ────────────────────────────────────────
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
@@ -658,6 +661,10 @@ function App() {
     setModal({ kind: "expand_plan", parentId });
   }, []);
 
+  const handleOpenRefinePlan = useCallback((sessionId: string) => {
+    setModal({ kind: "refine_plan", sessionId });
+  }, []);
+
   const handleConfirmStructuralNode = useCallback(
     async (_parentId: string, label: string, prompt: string) => {
       if (modal?.kind !== "create_structural_node" || !selectedProjectId) return;
@@ -710,6 +717,40 @@ function App() {
       }
     },
     [guardAgentRole, modal, selectedProjectId, settings.planning_agent],
+  );
+
+  const handleConfirmRefinePlan = useCallback(
+    async (provider: AgentType, lenses: string[], guidance: string) => {
+      if (modal?.kind !== "refine_plan" || !selectedProjectId) return;
+      try {
+        setIsRefiningPlan(true);
+        const nodes = await refinePlan({
+          projectId: selectedProjectId,
+          sessionRootId: modal.sessionId,
+          provider,
+          lenses,
+          guidance,
+        });
+        setFlowMode(inferFlowModeFromNodes(nodes));
+        setTreeNodes(nodes);
+        if (nodes.length > 0) {
+          const rootNode = nodes[0];
+          setSessions((prev) => [
+            rootNode,
+            ...prev.filter((session) => session.id !== modal.sessionId),
+          ]);
+          setSelectedSessionId(rootNode.id);
+          setSelectedNodeId(rootNode.id);
+        }
+        setModal(null);
+        setSuccess(`Refined flow with ${nodes.length} node${nodes.length === 1 ? "" : "s"}`);
+      } catch (e) {
+        throw e;
+      } finally {
+        setIsRefiningPlan(false);
+      }
+    },
+    [modal, selectedProjectId],
   );
 
   const handlePauseNode = useCallback(
@@ -1123,6 +1164,13 @@ function App() {
       ? treeNodes.find((n) => n.id === modal.parentId) ?? null
       : null;
 
+  const refineSessionRoot =
+    modal?.kind === "refine_plan"
+      ? treeNodes.find((n) => n.id === modal.sessionId) ??
+        sessions.find((n) => n.id === modal.sessionId) ??
+        null
+      : null;
+
   const knownNodes = useMemo(() => {
     const map = new Map<string, DecisionNode>();
     for (const node of sessions) map.set(node.id, node);
@@ -1162,6 +1210,7 @@ function App() {
             onMergeNode={handleMergeNode}
             onCreateStructuralNode={handleOpenStructuralNodeModal}
             onPlanFromNode={handleOpenPlanExpansion}
+            onRefinePlan={handleOpenRefinePlan}
             onRunNow={handleRunNow}
             onCloseTerminal={() => setSelectedNodeId(null)}
             onPauseNode={handlePauseNode}
@@ -1295,6 +1344,16 @@ function App() {
           planningAgentLabel={getAgentLabel(settings.planning_agent)}
           isGenerating={isGeneratingPlan}
           onConfirm={handleConfirmPlanExpansion}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === "refine_plan" && refineSessionRoot && (
+        <RefinePlanModal
+          sessionRoot={refineSessionRoot}
+          nodes={treeNodes}
+          statuses={agentProviderStatuses}
+          isRefining={isRefiningPlan}
+          onConfirm={handleConfirmRefinePlan}
           onClose={() => setModal(null)}
         />
       )}

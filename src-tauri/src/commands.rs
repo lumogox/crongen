@@ -2608,6 +2608,129 @@ pub async fn generate_plan_children(
     Ok(nodes)
 }
 
+#[tauri::command]
+pub async fn refine_plan(
+    state: State<'_, AppState>,
+    project_id: String,
+    session_root_id: String,
+    provider: String,
+    lenses: Vec<String>,
+    guidance: Option<String>,
+) -> Result<Vec<DecisionNode>, String> {
+    let provider = AgentType::from_str(&provider)?;
+    if provider == AgentType::Custom {
+        return Err("Custom providers are not supported for plan refinement.".to_string());
+    }
+    ensure_provider_ready(&provider, "planning").await?;
+
+    let settings = get_settings().await?;
+    let db_read = state.db.clone();
+    let pid = project_id.clone();
+    let sid = session_root_id.clone();
+    let (project_mode, repo_path, current_nodes) = tokio::task::spawn_blocking(move || {
+        let conn = db_read.lock().map_err(|e| format!("DB lock: {e}"))?;
+        let project = db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))?;
+        let root = db::node_get_by_id(&conn, &sid).map_err(|e| format!("Root node: {e}"))?;
+        if root.project_id != pid || root.parent_id.is_some() {
+            return Err("Refinement requires a selected session root for this project.".to_string());
+        }
+
+        let nodes = db::node_get_subtree(&conn, &sid).map_err(|e| format!("{e}"))?;
+        if nodes.is_empty() {
+            return Err("No flow exists to refine.".to_string());
+        }
+        if nodes.iter().any(|node| node.status != crate::models::NodeStatus::Pending) {
+            return Err(
+                "Only draft plans can be refined. Reset or create a new plan before refining executed nodes."
+                    .to_string(),
+            );
+        }
+        if nodes
+            .iter()
+            .any(|node| node.worktree_path.is_some() || node.commit_hash.is_some())
+        {
+            return Err(
+                "This flow already has execution artifacts. Create a new draft before refining it."
+                    .to_string(),
+            );
+        }
+
+        let project_mode = if project.project_mode == "blank" {
+            let roots = db::node_get_roots(&conn, &pid).map_err(|e| format!("{e}"))?;
+            let has_completed = roots.iter().any(|r| {
+                r.status == crate::models::NodeStatus::Completed
+                    || r.status == crate::models::NodeStatus::Merged
+            });
+            if has_completed {
+                "existing".to_string()
+            } else {
+                project.project_mode
+            }
+        } else {
+            project.project_mode
+        };
+
+        Ok::<(String, String, Vec<DecisionNode>), String>((project_mode, project.repo_path, nodes))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    let provider_config = settings_agent_config(&provider, Some(&settings));
+    let planning_model = provider_config
+        .as_ref()
+        .and_then(agent_config_model)
+        .or_else(|| {
+            if settings.planning_agent.as_ref() == Some(&provider) {
+                settings.planning_model.clone()
+            } else {
+                None
+            }
+        });
+    let planning_extra_args = provider_config
+        .as_ref()
+        .map(agent_config_extra_args)
+        .unwrap_or(&[]);
+
+    let plan = plan_generator::refine_plan(
+        &provider,
+        &current_nodes,
+        &project_mode,
+        &lenses,
+        guidance.as_deref(),
+        planning_model.as_deref(),
+        planning_extra_args,
+        &repo_path,
+    )
+    .await?;
+
+    let refined_nodes = plan_generator::plan_to_nodes(&plan, &project_id);
+    if refined_nodes.is_empty() {
+        return Err("Refinement returned an empty flow.".to_string());
+    }
+
+    let db_write = state.db.clone();
+    let old_root = session_root_id.clone();
+    let nodes_clone = refined_nodes.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db_write.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        db::node_delete_branch(&conn, &old_root).map_err(|e| format!("DB delete: {e}"))?;
+        for node in &nodes_clone {
+            db::node_create(&conn, node).map_err(|e| format!("DB insert: {e}"))?;
+        }
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))??;
+
+    log::info!(
+        "Refined plan for project {} with {} into {} nodes",
+        project_id,
+        provider.as_str(),
+        refined_nodes.len()
+    );
+    Ok(refined_nodes)
+}
+
 // ─── Git Branch Info ──────────────────────────────────────────
 
 #[tauri::command]

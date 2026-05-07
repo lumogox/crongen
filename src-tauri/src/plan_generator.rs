@@ -12,7 +12,7 @@ use crate::models::{AgentType, DecisionNode, NodeStatus};
 pub struct PlanNode {
     pub label: String,
     pub prompt: String,
-    pub node_type: String, // "task", "decision", "agent", "merge", "final"
+    pub node_type: String, // "task", "decision", "agent", "merge", "final", "validation"
     #[serde(default)]
     pub children: Vec<PlanNode>,
 }
@@ -92,6 +92,33 @@ LABELING: The root label MUST summarize the user's task (e.g. "Undo/Redo", "Dark
 Example for user task "Add undo/redo to the calculator":
 {"root":{"label":"Undo/Redo","prompt":"Read the project structure and understand how state is managed. Do NOT scaffold.","node_type":"task","children":[{"label":"Implement Undo/Redo","prompt":"Add undo/redo using a history stack, with Ctrl+Z/Ctrl+Y keyboard shortcuts.","node_type":"agent","children":[{"label":"Polish Undo/Redo","prompt":"Add tests and verify the implementation fits the existing codebase.","node_type":"agent","children":[]}]}]}}"#;
 
+const REFINE_SYSTEM_PROMPT: &str = r#"You are an orchestration plan editor. Output ONLY raw JSON, no markdown fences, no explanation.
+
+You will receive the current crongen execution flow and refinement guidance.
+Return a better flow using this exact schema:
+{"root":{"label":"...","prompt":"...","node_type":"task","children":[]}}
+
+Allowed node types:
+- "task": root task only. Summarizes the user goal and sets the starting context.
+- "agent": executable work step. This is a work item, not a provider name.
+- "decision": structural branch point. Use when alternatives should be explored.
+- "merge": executable compare step. Evaluates sibling branches and chooses or combines the best result.
+- "final": executable finish/polish step after comparison or implementation.
+- "validation": executable local validation/check step.
+
+Rules:
+- Preserve the root as node_type "task".
+- Keep labels short and action-oriented.
+- Make prompts specific enough for an execution agent to act without guessing.
+- You may rewrite, add, remove, reorder, or restructure nodes when the guidance asks for it.
+- Preserve useful intent from the current flow unless the guidance explicitly steers elsewhere.
+- For decision nodes, include at least 2 agent children. Add a merge child when branches should be compared.
+- Put validation after implementation, compare, or finish steps when checks matter.
+- Do not mention Claude, Codex, Gemini, or provider-specific details inside node labels/prompts unless the user explicitly asks.
+- For existing projects, do not scaffold or re-initialize; prompts should build on the current codebase.
+- Max 10 total nodes. Prompts: 1-3 concise sentences.
+"#;
+
 #[derive(Debug, Clone)]
 struct PlannerInvocation {
     program: String,
@@ -139,7 +166,7 @@ fn write_plan_output_schema() -> Result<PathBuf, String> {
                     "prompt": { "type": "string" },
                     "node_type": {
                         "type": "string",
-                        "enum": ["task", "decision", "agent", "merge", "final"]
+                        "enum": ["task", "decision", "agent", "merge", "final", "validation"]
                     },
                     "children": {
                         "type": "array",
@@ -504,6 +531,135 @@ pub async fn generate_plan(
         "Failed to parse plan from {} output: {}",
         planner_provider_name(provider),
         &stdout[..stdout.len().min(500)]
+    ))
+}
+
+pub async fn refine_plan(
+    provider: &AgentType,
+    current_nodes: &[DecisionNode],
+    project_mode: &str,
+    lenses: &[String],
+    guidance: Option<&str>,
+    model: Option<&str>,
+    extra_args: &[String],
+    repo_path: &str,
+) -> Result<GeneratedPlan, String> {
+    let current_flow_json = serde_json::to_string_pretty(current_nodes)
+        .map_err(|err| format!("Failed to serialize current flow: {err}"))?;
+    let lens_text = if lenses.is_empty() {
+        "Baseline polish: clarify labels, tighten prompts, improve flow coherence.".to_string()
+    } else {
+        lenses.join(", ")
+    };
+    let guidance_text = guidance
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("No additional guidance.");
+    let mode_guidance = if project_mode == "existing" {
+        "This is an existing codebase. Do not scaffold or re-initialize the project."
+    } else {
+        "This may be a blank project. Keep any needed setup scoped to the root task."
+    };
+
+    let full_prompt = format!(
+        "{REFINE_SYSTEM_PROMPT}\n\nProject mode: {project_mode}\n{mode_guidance}\n\nRefinement lenses: {lens_text}\n\nUser guidance:\n{guidance_text}\n\nCurrent flow JSON:\n{current_flow_json}"
+    );
+    let invocation =
+        build_planner_invocation(provider, &full_prompt, model, extra_args, repo_path)?;
+
+    let output = Command::new(&invocation.program)
+        .args(&invocation.args)
+        .current_dir(&invocation.current_dir)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn {}: {e}", invocation.program))?;
+
+    if !output.status.success() {
+        cleanup_output_file(invocation.output_file.as_ref());
+        cleanup_output_file(invocation.schema_file.as_ref());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let details = if stderr.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            stderr.trim().to_string()
+        };
+        return Err(format!(
+            "{} exited with error: {details}",
+            planner_provider_name(provider)
+        ));
+    }
+
+    let raw_output = if let Some(output_file) = &invocation.output_file {
+        let contents = fs::read_to_string(output_file).map_err(|e| {
+            cleanup_output_file(Some(output_file));
+            cleanup_output_file(invocation.schema_file.as_ref());
+            format!("Failed to read refined plan output: {e}")
+        });
+        cleanup_output_file(Some(output_file));
+        let contents = contents?;
+        cleanup_output_file(invocation.schema_file.as_ref());
+        contents
+    } else {
+        cleanup_output_file(invocation.schema_file.as_ref());
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+
+    if let Some(json_str) = extract_json_object(&raw_output) {
+        if let Some(plan) = try_parse_plan(json_str) {
+            return Ok(plan);
+        }
+        if let Ok(envelope) = serde_json::from_str::<serde_json::Value>(json_str) {
+            if let Some(result_str) = envelope.get("result").and_then(|v| v.as_str()) {
+                if let Some(inner_json) = extract_json_object(result_str) {
+                    if let Some(plan) = try_parse_plan(inner_json) {
+                        return Ok(plan);
+                    }
+                }
+            }
+            if let Some(result_obj) = envelope.get("result") {
+                if result_obj.is_object() {
+                    let normalized = normalize_keys(result_obj.clone());
+                    if let Ok(plan) = serde_json::from_value::<GeneratedPlan>(normalized) {
+                        return Ok(plan);
+                    }
+                }
+            }
+            if let Some(response_str) = envelope.get("response").and_then(|v| v.as_str()) {
+                if let Some(inner_json) = extract_json_object(response_str) {
+                    if let Some(plan) = try_parse_plan(inner_json) {
+                        return Ok(plan);
+                    }
+                }
+            }
+        }
+    }
+
+    for line in raw_output.lines().rev() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let envelope: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if envelope.get("type").and_then(|v| v.as_str()) != Some("result") {
+            continue;
+        }
+        if let Some(result_str) = envelope.get("result").and_then(|v| v.as_str()) {
+            if let Some(inner) = extract_json_object(result_str) {
+                if let Some(plan) = try_parse_plan(inner) {
+                    return Ok(plan);
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "Failed to parse refined plan from {} output: {}",
+        planner_provider_name(provider),
+        &raw_output[..raw_output.len().min(500)]
     ))
 }
 

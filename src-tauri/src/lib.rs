@@ -102,6 +102,7 @@ pub fn run() {
             // Plan generation
             commands::generate_plan,
             commands::generate_plan_children,
+            commands::refine_plan,
             // Settings
             commands::get_settings,
             commands::update_settings,

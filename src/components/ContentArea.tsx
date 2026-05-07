@@ -30,6 +30,7 @@ interface ContentAreaProps {
   onMergeNode: (nodeId: string) => void;
   onCreateStructuralNode: (parentId: string | null, nodeType: StructuralNodeType) => void;
   onPlanFromNode: (parentId: string) => void;
+  onRefinePlan: (sessionId: string) => void;
   onRunNow: (projectId: string) => void;
   onCloseTerminal: () => void;
   onPauseNode?: (nodeId: string) => void;
@@ -144,6 +145,7 @@ function ContentAreaInner({
   onMergeNode,
   onCreateStructuralNode,
   onPlanFromNode,
+  onRefinePlan,
   onRunNow,
   onCloseTerminal,
   onPauseNode,
@@ -475,16 +477,27 @@ function ContentAreaInner({
                 showAutoLayout={hasSelectedSession && hasCanvasNodes}
               />
               {hasSelectedSession && hasCanvasNodes ? (
-                <NodePalette
-                  selectedNode={selectedNode}
-                  allNodes={treeNodes}
-                  onAddNode={(nodeType) => {
-                    if (selectedNodeId) onCreateStructuralNode(selectedNodeId, nodeType);
-                  }}
-                  onPlanFromNode={() => {
-                    if (selectedNodeId) onPlanFromNode(selectedNodeId);
-                  }}
-                />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <NodePalette
+                    selectedNode={selectedNode}
+                    allNodes={treeNodes}
+                    onAddNode={(nodeType) => {
+                      if (selectedNodeId) onCreateStructuralNode(selectedNodeId, nodeType);
+                    }}
+                    onPlanFromNode={() => {
+                      if (selectedNodeId) onPlanFromNode(selectedNodeId);
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => selectedSessionId && onRefinePlan(selectedSessionId)}
+                    disabled={!selectedSessionId}
+                    className="rounded-full border-sky-400/30 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-100 hover:bg-sky-500/20"
+                  >
+                    <Sparkles className="mr-2 h-3.5 w-3.5" />
+                    Refine flow
+                  </Button>
+                </div>
               ) : null}
               <div className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-slate-700/70" style={{ backgroundColor: "#111827" }}>
                 {!hasSelectedSession ? (
