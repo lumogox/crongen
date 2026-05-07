@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::models::{AgentType, AgentTypeConfig, DecisionNode, NodeStatus, Project};
@@ -54,6 +54,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
             status          TEXT NOT NULL DEFAULT 'pending',
             exit_code       INTEGER,
             node_type       TEXT,
+            agent_type_override TEXT,
             scheduled_at    TEXT,
             started_at      INTEGER,
             created_at      INTEGER NOT NULL,
@@ -67,6 +68,10 @@ pub fn db_init(conn: &Connection) -> Result<()> {
 
     if !table_has_column(conn, "decision_nodes", "started_at")? {
         conn.execute_batch("ALTER TABLE decision_nodes ADD COLUMN started_at INTEGER;")?;
+    }
+
+    if !table_has_column(conn, "decision_nodes", "agent_type_override")? {
+        conn.execute_batch("ALTER TABLE decision_nodes ADD COLUMN agent_type_override TEXT;")?;
     }
 
     // Backfill nodes that were already running before the started_at column
@@ -92,7 +97,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
         ",
     )?;
 
-    conn.pragma_update(None, "user_version", 2)?;
+    conn.pragma_update(None, "user_version", 3)?;
 
     Ok(())
 }
@@ -161,6 +166,9 @@ fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
 fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
     let status_str: String = row.get("status")?;
     let status = NodeStatus::from_str(&status_str).unwrap_or(NodeStatus::Pending);
+    let agent_type_override = row
+        .get::<_, Option<String>>("agent_type_override")?
+        .and_then(|value| AgentType::from_str(&value).ok());
 
     Ok(DecisionNode {
         id: row.get("id")?,
@@ -174,6 +182,7 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
         status,
         exit_code: row.get("exit_code")?,
         node_type: row.get("node_type")?,
+        agent_type_override,
         scheduled_at: row.get("scheduled_at")?,
         started_at: row.get("started_at")?,
         created_at: row.get("created_at")?,
@@ -287,11 +296,12 @@ pub fn project_delete(conn: &Connection, id: &str) -> Result<()> {
 // ─── Decision Node CRUD ────────────────────────────────────────
 
 pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
+    let agent_type_override = node.agent_type_override.as_ref().map(AgentType::as_str);
     conn.execute(
         "INSERT INTO decision_nodes (id, project_id, parent_id, label, prompt,
          branch_name, worktree_path, commit_hash, status, exit_code,
-         node_type, scheduled_at, started_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+         node_type, agent_type_override, scheduled_at, started_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             node.id,
             node.project_id,
@@ -304,6 +314,7 @@ pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
             node.status.as_str(),
             node.exit_code,
             node.node_type,
+            agent_type_override,
             node.scheduled_at,
             node.started_at,
             node.created_at,
@@ -318,7 +329,7 @@ pub fn node_get_tree(conn: &Connection, project_id: &str) -> Result<Vec<Decision
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, started_at, created_at, updated_at
+                node_type, agent_type_override, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE project_id = ?1
          ORDER BY created_at ASC",
     )?;
@@ -334,7 +345,7 @@ pub fn node_get_by_id(conn: &Connection, id: &str) -> Result<DecisionNode> {
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, started_at, created_at, updated_at
+                node_type, agent_type_override, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE id = ?1",
     )?;
 
@@ -373,6 +384,23 @@ pub fn node_update_commit(conn: &Connection, id: &str, commit_hash: &str) -> Res
         "UPDATE decision_nodes SET commit_hash=?1, updated_at=?2 WHERE id=?3",
         params![commit_hash, now, id],
     )?;
+    Ok(())
+}
+
+pub fn node_update_agent_type_override(
+    conn: &Connection,
+    id: &str,
+    agent_type: Option<&AgentType>,
+) -> Result<()> {
+    let now = now_unix();
+    let value = agent_type.map(AgentType::as_str);
+    let rows = conn.execute(
+        "UPDATE decision_nodes SET agent_type_override=?1, updated_at=?2 WHERE id=?3",
+        params![value, now, id],
+    )?;
+    if rows == 0 {
+        anyhow::bail!("Decision node not found: {id}");
+    }
     Ok(())
 }
 
@@ -422,7 +450,7 @@ pub fn node_get_roots(conn: &Connection, project_id: &str) -> Result<Vec<Decisio
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, started_at, created_at, updated_at
+                node_type, agent_type_override, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE project_id = ?1 AND parent_id IS NULL
          ORDER BY created_at DESC",
     )?;
@@ -438,7 +466,7 @@ pub fn node_get_children(conn: &Connection, parent_id: &str) -> Result<Vec<Decis
     let mut stmt = conn.prepare(
         "SELECT id, project_id, parent_id, label, prompt, branch_name,
                 worktree_path, commit_hash, status, exit_code,
-                node_type, scheduled_at, started_at, created_at, updated_at
+                node_type, agent_type_override, scheduled_at, started_at, created_at, updated_at
          FROM decision_nodes WHERE parent_id = ?1
          ORDER BY created_at ASC",
     )?;
@@ -460,7 +488,8 @@ pub fn node_get_subtree(conn: &Connection, root_id: &str) -> Result<Vec<Decision
         )
         SELECT dn.id, dn.project_id, dn.parent_id, dn.label, dn.prompt,
                dn.branch_name, dn.worktree_path, dn.commit_hash, dn.status,
-               dn.exit_code, dn.node_type, dn.scheduled_at, dn.started_at, dn.created_at, dn.updated_at
+               dn.exit_code, dn.node_type, dn.agent_type_override, dn.scheduled_at,
+               dn.started_at, dn.created_at, dn.updated_at
         FROM decision_nodes dn
         JOIN subtree s ON dn.id = s.nid
         ORDER BY dn.created_at ASC",

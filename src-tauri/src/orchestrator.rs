@@ -760,16 +760,15 @@ async fn run_single_node(
 
     // Load execution model from settings
     let settings = crate::commands::get_settings().await.ok();
-    let effective_config = crate::commands::resolve_effective_agent_config(
-        &project.agent_type,
-        &project.type_config,
-        settings.as_ref(),
-    );
+    let effective_agent = crate::commands::effective_node_agent(&node, &project, settings.as_ref());
+    crate::commands::ensure_provider_ready(&effective_agent, "execution").await?;
+    let effective_config =
+        crate::commands::resolve_node_agent_config(&effective_agent, &project, settings.as_ref());
     let exec_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
 
     // Build execution command
     let execution = agent_templates::build_shell_command(
-        &project.agent_type,
+        &effective_agent,
         &node.prompt,
         &effective_config,
         Some(&toon_context),

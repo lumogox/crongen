@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { Sparkles, GitFork, GitMerge, Play, PlayCircle, XCircle, Loader2, Settings, FileCode, CheckCircle2, Rocket } from "lucide-react";
-import type { DecisionNode, OrchestratorMode, OrchestratorStatus, Project } from "../types";
+import type { AgentType, DecisionNode, OrchestratorMode, OrchestratorStatus, Project } from "../types";
 import type { StructuralNodeType } from "../types/node-types";
 import { DecisionCanvas } from "./DecisionCanvas";
 import { InspectorPanel } from "./InspectorPanel";
@@ -45,6 +45,7 @@ interface ContentAreaProps {
   onDeleteSession: (session: DecisionNode) => void;
   onRunNode: (nodeId: string) => void;
   onUpdateNode: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeAgent: (nodeId: string, agentType: AgentType | null) => void;
   orchestratorStatus: OrchestratorStatus | null;
   onStartOrchestrator?: (mode: OrchestratorMode) => void;
   onCancelOrchestrator?: () => void;
@@ -59,6 +60,7 @@ interface ContentAreaProps {
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
   onOpenNodeTerminal?: (nodeId: string) => void;
+  defaultExecutionAgent?: AgentType | null;
   manualTerminalSessionId?: string | null;
 }
 
@@ -161,6 +163,7 @@ function ContentAreaInner({
   onDeleteSession,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeAgent,
   orchestratorStatus,
   onStartOrchestrator,
   onCancelOrchestrator,
@@ -175,6 +178,7 @@ function ContentAreaInner({
   onRetryNode,
   onResetNode,
   onOpenNodeTerminal,
+  defaultExecutionAgent,
   manualTerminalSessionId,
 }: ContentAreaProps) {
   const selectedNode = selectedNodeId
@@ -585,12 +589,14 @@ function ContentAreaInner({
               onDelete={onDeleteNode}
               onRunNode={onRunNode}
               onUpdateNode={onUpdateNode}
+              onUpdateNodeAgent={onUpdateNodeAgent}
               onValidateRuntime={onValidateRuntime}
               onSendEnter={onSendEnterToNode}
               onStop={onStopNode}
               onRetryNode={onRetryNode}
               onResetNode={onResetNode}
               onOpenTerminal={onOpenNodeTerminal}
+              defaultExecutionAgent={defaultExecutionAgent}
               manualTerminalSessionId={manualTerminalSessionId}
             />
           ) : debugMode && treeNodes.length > 0 ? (

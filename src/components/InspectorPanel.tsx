@@ -15,8 +15,9 @@ import {
   SquareTerminal,
   CheckCircle2,
 } from "lucide-react";
-import type { DecisionNode, Project } from "../types";
+import type { AgentType, DecisionNode, Project } from "../types";
 import type { StructuralNodeType, VisualNodeType } from "../types/node-types";
+import { getAgentLabel } from "../lib/agent-templates";
 import { usesPtySessionControls } from "../lib/agent-runtime";
 import { getNodeTypeMeta, inferNodeType } from "../lib/node-type-inference";
 import { formatRelativeTime, formatSessionRuntime } from "../lib/utils";
@@ -39,12 +40,14 @@ interface InspectorPanelProps {
   onDelete?: (nodeId: string) => void;
   onRunNode?: (nodeId: string) => void;
   onUpdateNode?: (nodeId: string, label: string, prompt: string) => void;
+  onUpdateNodeAgent?: (nodeId: string, agentType: AgentType | null) => void;
   onValidateRuntime?: (nodeId: string) => void;
   onSendEnter?: (nodeId: string) => void;
   onStop?: (nodeId: string) => void;
   onRetryNode?: (nodeId: string) => void;
   onResetNode?: (nodeId: string) => void;
   onOpenTerminal?: (nodeId: string) => void;
+  defaultExecutionAgent?: AgentType | null;
   manualTerminalSessionId?: string | null;
 }
 
@@ -80,12 +83,14 @@ export function InspectorPanel({
   onDelete,
   onRunNode,
   onUpdateNode,
+  onUpdateNodeAgent,
   onValidateRuntime,
   onSendEnter,
   onStop,
   onRetryNode,
   onResetNode,
   onOpenTerminal,
+  defaultExecutionAgent,
   manualTerminalSessionId,
 }: InspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<InspectorTab>("Overview");
@@ -106,6 +111,9 @@ export function InspectorPanel({
   const children = allNodes.filter((n) => n.parent_id === node.id);
   const isMergeNode = visualType === "merge" || node.status === "merged";
   const isSessionRoot = node.parent_id === null;
+  const effectiveAgent = node.agent_type_override ?? defaultExecutionAgent ?? project.agent_type;
+  const canAssignAgent = ["task", "agent", "merge", "final"].includes(visualType);
+  const assignableAgents: AgentType[] = ["claude_code", "codex", "gemini"];
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border border-slate-700/70 bg-[#121a2a] shadow-xl">
@@ -142,6 +150,41 @@ export function InspectorPanel({
             <div className="text-xs text-slate-400">Project</div>
             <div className="mt-1 text-slate-100">{project.name}</div>
           </div>
+          {canAssignAgent && (
+            <div className="col-span-2 rounded-2xl border border-slate-700/70 bg-[#182235] p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs text-slate-400">Agent</div>
+                  <div className="mt-1 text-slate-100">
+                    {node.agent_type_override
+                      ? getAgentLabel(node.agent_type_override)
+                      : `Default (${getAgentLabel(effectiveAgent)})`}
+                  </div>
+                </div>
+                <select
+                  value={node.agent_type_override ?? ""}
+                  disabled={!onUpdateNodeAgent || node.status === "running"}
+                  onChange={(event) => {
+                    const nextAgent = event.target.value
+                      ? (event.target.value as AgentType)
+                      : null;
+                    onUpdateNodeAgent?.(node.id, nextAgent);
+                  }}
+                  className="min-w-40 rounded-xl border border-slate-600/70 bg-[#0f1726] px-3 py-2 text-sm text-slate-100 outline-none transition-colors hover:border-slate-500 focus:border-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Use default</option>
+                  {assignableAgents.map((agent) => (
+                    <option key={agent} value={agent}>
+                      {getAgentLabel(agent)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="text-xs leading-5 text-slate-400">
+                Used when this node runs. Leave default to follow Agent Bay settings.
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -169,7 +212,7 @@ export function InspectorPanel({
         {/* Session tab stays mounted for terminal preservation */}
         <SessionTab
           node={node}
-          agentType={project.agent_type}
+          agentType={effectiveAgent}
           isActive={activeTab === "Session"}
           manualTerminalSessionId={manualTerminalSessionId}
         />
@@ -230,7 +273,7 @@ export function InspectorPanel({
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Validate session state
                 </Button>
-                {usesPtySessionControls(project.agent_type) && node.status === "running" && onSendEnter && (
+                {usesPtySessionControls(effectiveAgent) && node.status === "running" && onSendEnter && (
                   <Button
                     variant="outline"
                     onClick={() => onSendEnter(node.id)}
@@ -485,7 +528,7 @@ export function InspectorPanel({
                   Validate session state
                 </Button>
               )}
-              {usesPtySessionControls(project.agent_type) && node.status === "running" && onSendEnter && (
+              {usesPtySessionControls(effectiveAgent) && node.status === "running" && onSendEnter && (
                 <Button
                   variant="outline"
                   onClick={() => onSendEnter(node.id)}

@@ -107,6 +107,7 @@ export interface DecisionNode {
   status: NodeStatus;
   exit_code: number | null;
   node_type: string | null;
+  agent_type_override: AgentType | null;
   scheduled_at: string | null; // ISO 8601 — only meaningful on root (session) nodes
   started_at: number | null;
   created_at: number;

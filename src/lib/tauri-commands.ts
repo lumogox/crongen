@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentProviderReadiness,
+  AgentType,
   AgentTypeConfig,
   AppSettings,
   CodexModelCatalog,
@@ -136,6 +137,13 @@ export async function updateNode(
   prompt: string,
 ): Promise<DecisionNode> {
   return invoke("update_node", { nodeId, label, prompt });
+}
+
+export async function updateNodeAgent(
+  nodeId: string,
+  agentType: AgentType | null,
+): Promise<DecisionNode> {
+  return invoke("update_node_agent", { nodeId, agentType });
 }
 
 export async function getRootNodes(projectId: string): Promise<DecisionNode[]> {

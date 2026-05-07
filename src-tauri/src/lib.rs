@@ -75,6 +75,7 @@ pub fn run() {
             commands::create_root_node,
             commands::run_node,
             commands::update_node,
+            commands::update_node_agent,
             commands::get_root_nodes,
             commands::merge_node_branch,
             commands::get_merge_preview,

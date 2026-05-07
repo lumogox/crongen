@@ -699,6 +699,7 @@ pub fn plan_to_nodes(plan: &GeneratedPlan, project_id: &str) -> Vec<DecisionNode
             status: NodeStatus::Pending,
             exit_code: None,
             node_type: Some(plan_node.node_type.clone()),
+            agent_type_override: None,
             scheduled_at: None,
             started_at: None,
             created_at: now,
@@ -744,6 +745,7 @@ pub fn plan_children_to_nodes(
             status: NodeStatus::Pending,
             exit_code: None,
             node_type: Some(plan_node.node_type.clone()),
+            agent_type_override: None,
             scheduled_at: None,
             started_at: None,
             created_at: now,
@@ -773,8 +775,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        GeneratedPlan, PlanNode, build_planner_invocation, cleanup_output_file,
-        codex_model_requires_default_retry, normalize_plan_for_complexity, plan_children_to_nodes,
+        build_planner_invocation, cleanup_output_file, codex_model_requires_default_retry,
+        normalize_plan_for_complexity, plan_children_to_nodes, GeneratedPlan, PlanNode,
     };
     use crate::models::AgentType;
 
@@ -807,12 +809,10 @@ mod tests {
 
         assert_eq!(invocation.program, "codex");
         assert_eq!(invocation.args.first().map(String::as_str), Some("exec"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "--output-last-message")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-last-message"));
         assert!(invocation.args.iter().any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
         cleanup_output_file(invocation.output_file.as_ref());
@@ -831,12 +831,10 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
     }
@@ -864,18 +862,14 @@ mod tests {
 
         assert_eq!(invocation.program, "gemini");
         assert!(invocation.args.iter().any(|arg| arg == "--prompt"));
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--approval-mode", "plan"])
-        );
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--include-directories", "../shared"])
-        );
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--approval-mode", "plan"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
         assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
         assert!(invocation.args.iter().any(|arg| arg == "json"));
         assert!(invocation.output_file.is_none());

@@ -14,9 +14,9 @@ use crate::db;
 use crate::git_manager;
 use crate::models::{
     AgentProviderReadiness, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
-    CodexModelCatalog, CodexModelOption, CodexReasoningLevel, DecisionNode, ExecutionMode,
-    NodeRuntimeValidation, NodeStatus, NodeTerminalSession, OrchestratorMode, OrchestratorState,
-    OrchestratorStatus, Project,
+    ClaudeCodeConfig, CodexConfig, CodexModelCatalog, CodexModelOption, CodexReasoningLevel,
+    CustomConfig, DecisionNode, ExecutionMode, GeminiConfig, NodeRuntimeValidation, NodeStatus,
+    NodeTerminalSession, OrchestratorMode, OrchestratorState, OrchestratorStatus, Project,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -375,7 +375,10 @@ fn role_requires_provider_validation(agent_type: &AgentType, role: &str) -> bool
     !matches!((agent_type, role), (AgentType::Custom, "execution"))
 }
 
-async fn ensure_provider_ready(agent_type: &AgentType, role: &str) -> Result<(), String> {
+pub(crate) async fn ensure_provider_ready(
+    agent_type: &AgentType,
+    role: &str,
+) -> Result<(), String> {
     if !role_requires_provider_validation(agent_type, role) {
         return Ok(());
     }
@@ -419,6 +422,48 @@ pub(crate) fn resolve_effective_agent_config(
     settings: Option<&AppSettings>,
 ) -> AgentTypeConfig {
     settings_agent_config(agent_type, settings).unwrap_or_else(|| project_config.clone())
+}
+
+pub(crate) fn default_agent_config(agent_type: &AgentType) -> AgentTypeConfig {
+    match agent_type {
+        AgentType::ClaudeCode => AgentTypeConfig::ClaudeCode(ClaudeCodeConfig {
+            dangerously_skip_permissions: true,
+            ..ClaudeCodeConfig::default()
+        }),
+        AgentType::Codex => AgentTypeConfig::Codex(CodexConfig::default()),
+        AgentType::Gemini => AgentTypeConfig::Gemini(GeminiConfig {
+            yolo: true,
+            ..GeminiConfig::default()
+        }),
+        AgentType::Custom => AgentTypeConfig::Custom(CustomConfig::default()),
+    }
+}
+
+pub(crate) fn effective_node_agent(
+    node: &DecisionNode,
+    project: &Project,
+    settings: Option<&AppSettings>,
+) -> AgentType {
+    node.agent_type_override
+        .clone()
+        .or_else(|| settings.and_then(|value| value.execution_agent.clone()))
+        .unwrap_or_else(|| project.agent_type.clone())
+}
+
+pub(crate) fn resolve_node_agent_config(
+    agent_type: &AgentType,
+    project: &Project,
+    settings: Option<&AppSettings>,
+) -> AgentTypeConfig {
+    if let Some(config) = settings_agent_config(agent_type, settings) {
+        return config;
+    }
+
+    if &project.agent_type == agent_type {
+        return project.type_config.clone();
+    }
+
+    default_agent_config(agent_type)
 }
 
 fn agent_config_model(config: &AgentTypeConfig) -> Option<String> {
@@ -913,6 +958,7 @@ async fn create_post_merge_validation_node(
             Err(_) => Some(1),
         },
         node_type: Some("validation".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: now,
@@ -1001,7 +1047,12 @@ pub async fn run_project_now(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    ensure_provider_ready(&project.agent_type, "execution").await?;
+    let settings = get_settings().await.ok();
+    let default_execution_agent = settings
+        .as_ref()
+        .and_then(|value| value.execution_agent.clone())
+        .unwrap_or_else(|| project.agent_type.clone());
+    ensure_provider_ready(&default_execution_agent, "execution").await?;
 
     // 2. Check no active sessions (DB check + PTY check)
     let project_id = project.id.clone();
@@ -1060,6 +1111,7 @@ pub async fn run_project_now(
         status: NodeStatus::Pending,
         exit_code: None,
         node_type: Some("task".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: now,
@@ -1076,15 +1128,11 @@ pub async fn run_project_now(
     .map_err(|e| format!("Task error: {e}"))??;
 
     // 7. Build execution mode and spawn appropriate session (no context for root)
-    let settings = get_settings().await.ok();
-    let effective_config = resolve_effective_agent_config(
-        &project.agent_type,
-        &project.type_config,
-        settings.as_ref(),
-    );
+    let effective_agent = effective_node_agent(&node, &project, settings.as_ref());
+    let effective_config = resolve_node_agent_config(&effective_agent, &project, settings.as_ref());
     let exec_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
     let execution = agent_templates::build_shell_command(
-        &project.agent_type,
+        &effective_agent,
         &project.prompt,
         &effective_config,
         None,
@@ -1231,6 +1279,7 @@ pub async fn fork_node(
         status: NodeStatus::Pending,
         exit_code: None,
         node_type: Some("agent".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: now,
@@ -1259,7 +1308,8 @@ pub async fn create_structural_node(
     node_type: String,
 ) -> Result<DecisionNode, String> {
     // Validate node_type
-    if !["task", "decision", "agent", "merge", "final", "validation"].contains(&node_type.as_str()) {
+    if !["task", "decision", "agent", "merge", "final", "validation"].contains(&node_type.as_str())
+    {
         return Err(format!(
             "Invalid structural node type: {node_type}. Must be task, decision, agent, merge, final, or validation"
         ));
@@ -1281,6 +1331,7 @@ pub async fn create_structural_node(
         status: NodeStatus::Pending,
         exit_code: None,
         node_type: Some(node_type),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: now,
@@ -1697,6 +1748,7 @@ pub async fn create_root_node(
         status: NodeStatus::Pending,
         exit_code: None,
         node_type: Some("task".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: now,
@@ -1758,7 +1810,9 @@ pub async fn run_node(
 
     let is_validation = node.node_type.as_deref() == Some("validation");
     if !is_validation {
-        ensure_provider_ready(&project.agent_type, "execution").await?;
+        let settings = get_settings().await.ok();
+        let effective_agent = effective_node_agent(&node, &project, settings.as_ref());
+        ensure_provider_ready(&effective_agent, "execution").await?;
     } else {
         let repo_for_validation = project.repo_path.clone();
         let plan = tokio::task::spawn_blocking(move || {
@@ -1855,14 +1909,11 @@ pub async fn run_node(
 
     // 9. Build execution and spawn session with TOON context
     let settings = get_settings().await.ok();
-    let effective_config = resolve_effective_agent_config(
-        &project.agent_type,
-        &project.type_config,
-        settings.as_ref(),
-    );
+    let effective_agent = effective_node_agent(&node, &project, settings.as_ref());
+    let effective_config = resolve_node_agent_config(&effective_agent, &project, settings.as_ref());
     let exec_model2 = settings.as_ref().and_then(|s| s.execution_model.as_deref());
     let execution = agent_templates::build_shell_command(
-        &project.agent_type,
+        &effective_agent,
         &node.prompt,
         &effective_config,
         Some(&toon_context),
@@ -1947,6 +1998,40 @@ pub async fn update_node(
 
     log::info!("Updated node content: {} ({})", updated.label, updated.id);
     Ok(updated)
+}
+
+#[tauri::command]
+pub async fn update_node_agent(
+    state: State<'_, AppState>,
+    node_id: String,
+    agent_type: Option<String>,
+) -> Result<DecisionNode, String> {
+    let parsed_agent = match agent_type {
+        Some(value) if value.trim().is_empty() => None,
+        Some(value) => {
+            let parsed = AgentType::from_str(&value)?;
+            if parsed == AgentType::Custom {
+                return Err("Custom shells cannot be assigned to individual nodes.".to_string());
+            }
+            Some(parsed)
+        }
+        None => None,
+    };
+
+    let db = state.db.clone();
+    let nid = node_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        let node = db::node_get_by_id(&conn, &nid).map_err(|e| format!("{e}"))?;
+        if matches!(node.node_type.as_deref(), Some("decision" | "validation")) {
+            return Err("Only agent-run nodes can have an agent override.".to_string());
+        }
+        db::node_update_agent_type_override(&conn, &nid, parsed_agent.as_ref())
+            .map_err(|e| format!("{e}"))?;
+        db::node_get_by_id(&conn, &nid).map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))?
 }
 
 #[tauri::command]
@@ -2051,11 +2136,9 @@ pub async fn open_node_terminal(
     let cwd = resolve_node_terminal_cwd(&node, &project);
     let session_id = manual_terminal_session_id(&node.id);
     let settings = get_settings().await.ok();
-    let effective_config = resolve_effective_agent_config(
-        &project.agent_type,
-        &project.type_config,
-        settings.as_ref(),
-    );
+    let effective_agent = effective_node_agent(&node, &project, settings.as_ref());
+    ensure_provider_ready(&effective_agent, "execution").await?;
+    let effective_config = resolve_node_agent_config(&effective_agent, &project, settings.as_ref());
     let execution_model = settings.as_ref().and_then(|s| s.execution_model.as_deref());
     let effective_model =
         agent_config_model(&effective_config).or_else(|| execution_model.map(ToString::to_string));
@@ -2063,7 +2146,7 @@ pub async fn open_node_terminal(
     if !state.pty.has_session(&session_id) {
         state.pty.clear_session_artifacts(&session_id);
         let shell = agent_templates::build_interactive_terminal_command(
-            &project.agent_type,
+            &effective_agent,
             &effective_config,
             execution_model,
         );
@@ -2083,7 +2166,7 @@ pub async fn open_node_terminal(
     Ok(NodeTerminalSession {
         session_id,
         cwd,
-        agent_label: agent_label(&project.agent_type).to_string(),
+        agent_label: agent_label(&effective_agent).to_string(),
         model: effective_model,
     })
 }
@@ -2186,15 +2269,34 @@ pub async fn start_orchestrator(
 
     let db = state.db.clone();
     let root_id = session_root_id.clone();
-    let project = tokio::task::spawn_blocking(move || {
+    let (project, nodes) = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         let root = db::node_get_by_id(&conn, &root_id).map_err(|e| format!("{e}"))?;
-        db::project_get_by_id(&conn, &root.project_id).map_err(|e| format!("{e}"))
+        let project = db::project_get_by_id(&conn, &root.project_id).map_err(|e| format!("{e}"))?;
+        let nodes = db::node_get_subtree(&conn, &root_id).map_err(|e| format!("{e}"))?;
+        Ok::<(Project, Vec<DecisionNode>), String>((project, nodes))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    ensure_provider_ready(&project.agent_type, "execution").await?;
+    let settings = get_settings().await.ok();
+    let mut required_agents = Vec::<AgentType>::new();
+    for node in nodes {
+        if node.status != NodeStatus::Pending {
+            continue;
+        }
+        if matches!(node.node_type.as_deref(), Some("decision" | "validation")) {
+            continue;
+        }
+        let agent = effective_node_agent(&node, &project, settings.as_ref());
+        if !required_agents.contains(&agent) {
+            required_agents.push(agent);
+        }
+    }
+
+    for agent in required_agents {
+        ensure_provider_ready(&agent, "execution").await?;
+    }
 
     state
         .orchestrator
@@ -2646,7 +2748,8 @@ pub async fn generate_plan_children(
     let parent = parent_id.clone();
     let (project_mode, repo_path) = tokio::task::spawn_blocking(move || {
         let conn = db_mode.lock().map_err(|e| format!("DB lock: {e}"))?;
-        let parent_node = db::node_get_by_id(&conn, &parent).map_err(|e| format!("Parent node: {e}"))?;
+        let parent_node =
+            db::node_get_by_id(&conn, &parent).map_err(|e| format!("Parent node: {e}"))?;
         if parent_node.project_id != pid {
             return Err("Parent node does not belong to the selected project.".to_string());
         }
@@ -2922,10 +3025,51 @@ pub async fn get_node_context(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_merge_resolution_invocation, classify_codex_login_status,
-        parse_claude_auth_logged_in, parse_codex_model_catalog, role_requires_provider_validation,
+        build_merge_resolution_invocation, classify_codex_login_status, effective_node_agent,
+        parse_claude_auth_logged_in, parse_codex_model_catalog, resolve_node_agent_config,
+        role_requires_provider_validation,
     };
-    use crate::models::{AgentProviderStatus, AgentType};
+    use crate::models::{
+        AgentCliConfigs, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
+        ClaudeCodeConfig, CodexConfig, DecisionNode, NodeStatus, Project,
+    };
+
+    fn test_project(agent_type: AgentType, type_config: AgentTypeConfig) -> Project {
+        Project {
+            id: "project".to_string(),
+            name: "Project".to_string(),
+            prompt: "Prompt".to_string(),
+            shell: "zsh".to_string(),
+            repo_path: "/tmp/project".to_string(),
+            is_active: true,
+            agent_type,
+            type_config,
+            project_mode: "existing".to_string(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    fn test_node(agent_type_override: Option<AgentType>) -> DecisionNode {
+        DecisionNode {
+            id: "node".to_string(),
+            project_id: "project".to_string(),
+            parent_id: None,
+            label: "Node".to_string(),
+            prompt: "Run this".to_string(),
+            branch_name: "pending/node".to_string(),
+            worktree_path: None,
+            commit_hash: None,
+            status: NodeStatus::Pending,
+            exit_code: None,
+            node_type: Some("agent".to_string()),
+            agent_type_override,
+            scheduled_at: None,
+            started_at: None,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
 
     #[test]
     fn parses_claude_auth_status_even_when_logged_out() {
@@ -2953,6 +3097,85 @@ mod tests {
             &AgentType::Codex,
             "execution"
         ));
+    }
+
+    #[test]
+    fn node_agent_override_wins_over_default_and_project() {
+        let mut settings = AppSettings::default();
+        settings.execution_agent = Some(AgentType::Gemini);
+        let project = test_project(
+            AgentType::Codex,
+            AgentTypeConfig::Codex(CodexConfig::default()),
+        );
+        let node = test_node(Some(AgentType::ClaudeCode));
+
+        assert_eq!(
+            effective_node_agent(&node, &project, Some(&settings)),
+            AgentType::ClaudeCode
+        );
+    }
+
+    #[test]
+    fn default_execution_agent_wins_when_node_has_no_override() {
+        let mut settings = AppSettings::default();
+        settings.execution_agent = Some(AgentType::Gemini);
+        let project = test_project(
+            AgentType::Codex,
+            AgentTypeConfig::Codex(CodexConfig::default()),
+        );
+        let node = test_node(None);
+
+        assert_eq!(
+            effective_node_agent(&node, &project, Some(&settings)),
+            AgentType::Gemini
+        );
+    }
+
+    #[test]
+    fn overridden_node_uses_matching_settings_config_not_project_config() {
+        let mut settings = AppSettings::default();
+        settings.agent_configs = AgentCliConfigs {
+            claude_code: Some(ClaudeCodeConfig {
+                model: Some("settings-claude".to_string()),
+                ..ClaudeCodeConfig::default()
+            }),
+            codex: None,
+            gemini: None,
+        };
+        let project = test_project(
+            AgentType::Codex,
+            AgentTypeConfig::Codex(CodexConfig {
+                model: Some("project-codex".to_string()),
+                ..CodexConfig::default()
+            }),
+        );
+
+        let config = resolve_node_agent_config(&AgentType::ClaudeCode, &project, Some(&settings));
+
+        match config {
+            AgentTypeConfig::ClaudeCode(config) => {
+                assert_eq!(config.model.as_deref(), Some("settings-claude"));
+            }
+            other => panic!("expected Claude config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unrelated_project_config_is_not_reused_for_overridden_agent() {
+        let project = test_project(
+            AgentType::Codex,
+            AgentTypeConfig::Codex(CodexConfig {
+                model: Some("project-codex".to_string()),
+                ..CodexConfig::default()
+            }),
+        );
+
+        let config = resolve_node_agent_config(&AgentType::ClaudeCode, &project, None);
+
+        match config {
+            AgentTypeConfig::ClaudeCode(config) => assert_eq!(config.model, None),
+            other => panic!("expected default Claude config, got {other:?}"),
+        }
     }
 
     #[test]

@@ -35,12 +35,17 @@ fn test_db_init_creates_project_schema_and_crud() {
     assert!(column_exists(&conn, "projects", "project_mode"));
     assert!(column_exists(&conn, "decision_nodes", "project_id"));
     assert!(column_exists(&conn, "decision_nodes", "started_at"));
+    assert!(column_exists(
+        &conn,
+        "decision_nodes",
+        "agent_type_override"
+    ));
     assert!(!column_exists(&conn, "decision_nodes", "agent_id"));
 
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 2);
+    assert_eq!(user_version, 3);
 
     let config = serde_json::json!({
         "type": "claude_code",
@@ -117,6 +122,7 @@ fn test_db_init_creates_project_schema_and_crud() {
         status: models::NodeStatus::Completed,
         exit_code: Some(0),
         node_type: Some("task".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: Some(1_500_000),
         created_at: 1_000_000,
@@ -136,6 +142,7 @@ fn test_db_init_creates_project_schema_and_crud() {
         status: models::NodeStatus::Completed,
         exit_code: Some(0),
         node_type: Some("agent".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: Some(1_600_000),
         created_at: 1_100_000,
@@ -265,6 +272,7 @@ fn test_node_delete_branch_removes_subtree_with_foreign_keys() {
         status: models::NodeStatus::Pending,
         exit_code: None,
         node_type: Some("task".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: 1_000,
@@ -284,6 +292,7 @@ fn test_node_delete_branch_removes_subtree_with_foreign_keys() {
         status: models::NodeStatus::Pending,
         exit_code: None,
         node_type: Some("agent".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: 1_001,
@@ -303,6 +312,7 @@ fn test_node_delete_branch_removes_subtree_with_foreign_keys() {
         status: models::NodeStatus::Pending,
         exit_code: None,
         node_type: Some("final".to_string()),
+        agent_type_override: None,
         scheduled_at: None,
         started_at: None,
         created_at: 1_002,
@@ -442,7 +452,7 @@ fn test_db_init_resets_legacy_agent_schema() {
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 2);
+    assert_eq!(user_version, 3);
 }
 
 #[test]

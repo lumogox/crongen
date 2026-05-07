@@ -35,6 +35,7 @@ import {
   createRootNode,
   runNode,
   updateNode,
+  updateNodeAgent,
   getRootNodes,
   startOrchestrator,
   getOrchestratorStatus,
@@ -615,7 +616,8 @@ function App() {
   const handleRunNow = useCallback(
     async (projectId: string) => {
       const project = projects.find((entry) => entry.id === projectId) ?? null;
-      if (!project || !guardAgentRole("execution", project.agent_type, "Execution")) return;
+      const executionAgent = settings.execution_agent ?? project?.agent_type ?? null;
+      if (!project || !guardAgentRole("execution", executionAgent, "Execution")) return;
       try {
         const rootNode = await runProjectNow(projectId);
         setFlowMode(inferFlowModeFromNodes([rootNode]));
@@ -627,7 +629,7 @@ function App() {
         setError(String(e));
       }
     },
-    [guardAgentRole, projects],
+    [guardAgentRole, projects, settings.execution_agent],
   );
 
   const handleSelectNode = useCallback((id: string | null) => {
@@ -905,9 +907,7 @@ function App() {
 
   const handleRunNode = useCallback(
     async (nodeId: string) => {
-      if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
-        return;
-      }
+      if (!selectedProject) return;
       try {
         const updated = await runNode(nodeId);
         applyUpdatedNode(updated);
@@ -915,7 +915,7 @@ function App() {
         setError(String(e));
       }
     },
-    [applyUpdatedNode, guardAgentRole, selectedProject],
+    [applyUpdatedNode, selectedProject],
   );
 
   const handleUpdateNode = useCallback(
@@ -923,6 +923,23 @@ function App() {
       try {
         const updated = await updateNode(nodeId, label, prompt);
         applyUpdatedNode(updated);
+      } catch (e) {
+        setError(String(e));
+      }
+    },
+    [applyUpdatedNode],
+  );
+
+  const handleUpdateNodeAgent = useCallback(
+    async (nodeId: string, agentType: AgentType | null) => {
+      try {
+        const updated = await updateNodeAgent(nodeId, agentType);
+        applyUpdatedNode(updated);
+        setSuccess(
+          agentType
+            ? `Node will run with ${getAgentLabel(agentType)}.`
+            : "Node will use the default execution agent.",
+        );
       } catch (e) {
         setError(String(e));
       }
@@ -992,7 +1009,7 @@ function App() {
   const handleStartOrchestrator = useCallback(
     async (mode: OrchestratorMode) => {
       if (!selectedSessionId) return;
-      if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
+      if (!selectedProject) {
         return;
       }
       try {
@@ -1020,7 +1037,7 @@ function App() {
         setOrchestratorStatus(null);
       }
     },
-    [guardAgentRole, selectedProject, selectedSessionId, treeNodes],
+    [selectedProject, selectedSessionId, treeNodes],
   );
 
   const handleSubmitDecision = useCallback(
@@ -1052,7 +1069,8 @@ function App() {
   const handleQuickRun = useCallback(
     async (prompt: string) => {
       if (!selectedProjectId || !selectedProject) return;
-      if (!guardAgentRole("execution", selectedProject.agent_type, "Execution")) return;
+      const executionAgent = settings.execution_agent ?? selectedProject.agent_type;
+      if (!guardAgentRole("execution", executionAgent, "Execution")) return;
       let rootNode: DecisionNode | null = null;
       try {
         setIsGeneratingPlan(true);
@@ -1084,7 +1102,7 @@ function App() {
         setIsGeneratingPlan(false);
       }
     },
-    [guardAgentRole, selectedProject, selectedProjectId],
+    [guardAgentRole, selectedProject, selectedProjectId, settings.execution_agent],
   );
 
   const handleGeneratePlan = useCallback(
@@ -1150,9 +1168,7 @@ function App() {
   }, [applyUpdatedNode]);
 
   const handleRetryNode = useCallback(async (nodeId: string) => {
-    if (!selectedProject || !guardAgentRole("execution", selectedProject.agent_type, "Execution")) {
-      return;
-    }
+    if (!selectedProject) return;
     try {
       const reset = await resetNodeStatus(nodeId);
       applyUpdatedNode(reset);
@@ -1162,7 +1178,7 @@ function App() {
     } catch (e) {
       setError(String(e));
     }
-  }, [applyUpdatedNode, guardAgentRole, selectedProject]);
+  }, [applyUpdatedNode, selectedProject]);
 
   const handleMergeComplete = useCallback(async (outcome: "merged" | "branched") => {
     if (outcome === "merged" && selectedSessionId) {
@@ -1258,6 +1274,7 @@ function App() {
             onDeleteSession={handleDeleteSession}
             onRunNode={handleRunNode}
             onUpdateNode={handleUpdateNode}
+            onUpdateNodeAgent={handleUpdateNodeAgent}
             orchestratorStatus={orchestratorStatus}
             onStartOrchestrator={handleStartOrchestrator}
             onCancelOrchestrator={handleCancelOrchestrator}
@@ -1272,6 +1289,7 @@ function App() {
             onRetryNode={handleRetryNode}
             onResetNode={handleResetNode}
             onOpenNodeTerminal={handleRequestOpenNodeTerminal}
+            defaultExecutionAgent={settings.execution_agent}
           />
         </div>
       </div>
