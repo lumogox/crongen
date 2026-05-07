@@ -1198,8 +1198,8 @@ function App() {
     }
   }, [applyUpdatedNode, selectedProject]);
 
-  const handleMergeComplete = useCallback(async (outcome: "merged" | "branched") => {
-    if (outcome === "merged" && selectedSessionId) {
+  const handleMergeComplete = useCallback(async (_outcome: "merged" | "branched") => {
+    if (selectedSessionId) {
       setSessions((prev) =>
         prev.map((s) => s.id === selectedSessionId ? { ...s, status: "merged" as const } : s),
       );

@@ -1559,8 +1559,7 @@ pub async fn merge_node_branch(
         let nid = node_id.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db4.lock().map_err(|e| format!("DB lock error: {e}"))?;
-            db::node_update_status(&conn, &nid, &NodeStatus::Merged, None)
-                .map_err(|e| format!("{e}"))
+            db::node_mark_session_merged(&conn, &nid).map_err(|e| format!("{e}"))
         })
         .await
         .map_err(|e| format!("Task error: {e}"))??;
@@ -2437,8 +2436,7 @@ pub async fn mark_node_merged(state: State<'_, AppState>, node_id: String) -> Re
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_update_status(&conn, &node_id, &NodeStatus::Merged, None)
-            .map_err(|e| format!("{e}"))
+        db::node_mark_session_merged(&conn, &node_id).map_err(|e| format!("{e}"))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -3055,6 +3053,7 @@ pub async fn create_feature_branch(
                 .map_err(|e| format!("{e}"))?;
 
         git_manager::cleanup_crongen_worktrees(&project.repo_path).map_err(|e| format!("{e}"))?;
+        db::node_mark_session_merged(&conn, &node_id).map_err(|e| format!("{e}"))?;
 
         Ok(FeatureBranchResult {
             branch_name: created_branch,

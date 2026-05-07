@@ -378,6 +378,34 @@ pub fn node_update_status(
     Ok(())
 }
 
+pub fn node_get_session_root_id(conn: &Connection, id: &str) -> Result<String> {
+    conn.query_row(
+        "WITH RECURSIVE ancestors(nid, parent_id, depth) AS (
+            SELECT id, parent_id, 0 FROM decision_nodes WHERE id = ?1
+            UNION ALL
+            SELECT dn.id, dn.parent_id, a.depth + 1
+            FROM decision_nodes dn
+            JOIN ancestors a ON dn.id = a.parent_id
+        )
+        SELECT nid FROM ancestors
+        WHERE parent_id IS NULL
+        ORDER BY depth DESC
+        LIMIT 1",
+        params![id],
+        |row| row.get(0),
+    )
+    .context("Session root not found")
+}
+
+pub fn node_mark_session_merged(conn: &Connection, id: &str) -> Result<()> {
+    let root_id = node_get_session_root_id(conn, id)?;
+    node_update_status(conn, id, &NodeStatus::Merged, None)?;
+    if root_id != id {
+        node_update_status(conn, &root_id, &NodeStatus::Merged, None)?;
+    }
+    Ok(())
+}
+
 pub fn node_update_commit(conn: &Connection, id: &str, commit_hash: &str) -> Result<()> {
     let now = now_unix();
     conn.execute(
@@ -563,4 +591,73 @@ pub fn orchestrator_update_state(
         params![state, current_node_id, now, root_id],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_project() -> Project {
+        Project {
+            id: "project".to_string(),
+            name: "Project".to_string(),
+            prompt: String::new(),
+            shell: "zsh".to_string(),
+            repo_path: "/tmp/project".to_string(),
+            is_active: true,
+            agent_type: AgentType::Codex,
+            type_config: AgentTypeConfig::Codex(Default::default()),
+            project_mode: "existing".to_string(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    fn test_node(id: &str, parent_id: Option<&str>, status: NodeStatus) -> DecisionNode {
+        DecisionNode {
+            id: id.to_string(),
+            project_id: "project".to_string(),
+            parent_id: parent_id.map(str::to_string),
+            label: id.to_string(),
+            prompt: String::new(),
+            branch_name: format!("crongen/{id}"),
+            worktree_path: None,
+            commit_hash: None,
+            status,
+            exit_code: None,
+            node_type: Some("agent".to_string()),
+            agent_type_override: None,
+            scheduled_at: None,
+            started_at: None,
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn node_mark_session_merged_marks_node_and_root() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        db_init(&conn).expect("schema");
+        project_create(&conn, &test_project()).expect("project");
+        node_create(&conn, &test_node("root", None, NodeStatus::Completed)).expect("root");
+        node_create(
+            &conn,
+            &test_node("decision", Some("root"), NodeStatus::Pending),
+        )
+        .expect("decision");
+        node_create(
+            &conn,
+            &test_node("terminal", Some("decision"), NodeStatus::Completed),
+        )
+        .expect("terminal");
+
+        node_mark_session_merged(&conn, "terminal").expect("mark merged");
+
+        let root = node_get_by_id(&conn, "root").expect("root");
+        let decision = node_get_by_id(&conn, "decision").expect("decision");
+        let terminal = node_get_by_id(&conn, "terminal").expect("terminal");
+        assert_eq!(root.status, NodeStatus::Merged);
+        assert_eq!(decision.status, NodeStatus::Pending);
+        assert_eq!(terminal.status, NodeStatus::Merged);
+    }
 }

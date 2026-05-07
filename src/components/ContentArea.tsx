@@ -219,11 +219,12 @@ function ContentAreaInner({
   // ─── Session completion detection ──────────────────────────
   // A session is complete when: there are nodes, no runnable nodes are pending,
   // and the orchestrator isn't actively running.
-  // Session root already merged to main — don't show merge buttons
+  // Shipped sessions can have either the root or the terminal shipped node marked
+  // as merged, depending on the app version that performed the ship operation.
   const sessionAlreadyMerged = useMemo(() => {
     if (!selectedSessionId) return false;
     const root = treeNodes.find((n) => n.id === selectedSessionId);
-    return root?.status === "merged";
+    return root?.status === "merged" || treeNodes.some((n) => n.status === "merged");
   }, [selectedSessionId, treeNodes]);
 
   const sessionComplete = useMemo(() => {
