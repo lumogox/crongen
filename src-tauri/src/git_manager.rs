@@ -140,6 +140,60 @@ fn worktrees_dir(repo_path: &str) -> PathBuf {
     Path::new(repo_path).join(".crongen-worktrees")
 }
 
+fn ensure_worktrees_excluded(repo_path: &str) -> Result<()> {
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args(["rev-parse", "--git-path", "info/exclude"])
+        .output()
+        .context("Failed to locate git exclude file")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Failed to locate git exclude file: {stderr}");
+    }
+
+    let exclude_path_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let exclude_path = PathBuf::from(&exclude_path_text);
+    let exclude_path = if exclude_path.is_absolute() {
+        exclude_path
+    } else {
+        Path::new(repo_path).join(exclude_path)
+    };
+
+    if let Some(parent) = exclude_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "Failed to create git exclude directory: {}",
+                parent.display()
+            )
+        })?;
+    }
+
+    let mut content = if exclude_path.exists() {
+        std::fs::read_to_string(&exclude_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    if !content
+        .lines()
+        .any(|line| line.trim() == ".crongen-worktrees/")
+    {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(".crongen-worktrees/\n");
+        std::fs::write(&exclude_path, content).with_context(|| {
+            format!(
+                "Failed to update git exclude file: {}",
+                exclude_path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
 // ─── Worktree Create ─────────────────────────────────────────
 
 /// Create a git worktree on a new branch, optionally from a specific commit.
@@ -152,6 +206,8 @@ pub fn create_worktree(
     branch_name: &str,
     from_commit: Option<&str>,
 ) -> Result<WorktreeInfo> {
+    ensure_worktrees_excluded(repo_path)?;
+
     let wt_dir = worktrees_dir(repo_path);
     std::fs::create_dir_all(&wt_dir)
         .with_context(|| format!("Failed to create worktrees directory: {}", wt_dir.display()))?;
@@ -619,7 +675,10 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{create_branch_at_and_checkout, get_current_commit, validate_feature_branch_name};
+    use super::{
+        create_branch_at_and_checkout, ensure_worktrees_excluded, get_current_commit,
+        validate_feature_branch_name,
+    };
     use std::{fs, path::PathBuf, process::Command};
 
     fn temp_repo_path() -> PathBuf {
@@ -698,5 +757,28 @@ mod tests {
         assert!(validate_feature_branch_name("Feature/new-vfxs. Asdasd asdqwe").is_err());
         assert!(validate_feature_branch_name("feature/new vfx").is_err());
         assert!(validate_feature_branch_name("feature//new-vfx").is_err());
+    }
+
+    #[test]
+    fn ensure_worktrees_excluded_hides_crongen_worktree_dir() {
+        let repo_path = temp_repo_path();
+        fs::create_dir_all(&repo_path).expect("create temp repo");
+
+        run_git(&repo_path, &["init", "-b", "main"]);
+        fs::create_dir_all(repo_path.join(".crongen-worktrees/example"))
+            .expect("create worktree dir");
+
+        ensure_worktrees_excluded(repo_path.to_str().expect("utf8 path"))
+            .expect("exclude worktrees");
+
+        let status = Command::new("git")
+            .current_dir(&repo_path)
+            .args(["status", "--short"])
+            .output()
+            .expect("git status");
+        assert!(status.status.success());
+        assert_eq!(String::from_utf8_lossy(&status.stdout), "");
+
+        let _ = fs::remove_dir_all(repo_path);
     }
 }
