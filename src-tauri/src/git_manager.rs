@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -113,6 +113,32 @@ pub fn get_current_commit(path: &str) -> Result<String> {
         .context("HEAD does not point to a commit")?;
 
     Ok(commit.id().to_string())
+}
+
+pub fn commit_is_reachable_from_user_branch(repo_path: &str, commit_hash: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .current_dir(repo_path)
+        .args([
+            "branch",
+            "--contains",
+            commit_hash,
+            "--format=%(refname:short)",
+        ])
+        .output()
+        .with_context(|| format!("Failed to list branches containing {commit_hash}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git branch --contains failed: {stderr}");
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        let branch = line.trim();
+        !branch.is_empty()
+            && !branch.starts_with("crongen/")
+            && !branch.starts_with("structural/")
+            && !branch.starts_with("pending/")
+    }))
 }
 
 /// Get the default branch name (main or master) for a repository.
@@ -818,7 +844,8 @@ pub fn finalize_merge_resolution(repo_path: &str) -> Result<String> {
 mod tests {
     use super::{
         agent_commit_message, cleanup_crongen_worktrees, cleanup_worktrees,
-        create_branch_at_and_checkout, get_current_commit, validate_feature_branch_name,
+        commit_is_reachable_from_user_branch, create_branch_at_and_checkout, get_current_commit,
+        validate_feature_branch_name,
     };
     use std::{fs, path::PathBuf, process::Command};
 
@@ -928,6 +955,49 @@ mod tests {
         assert!(validate_feature_branch_name("Feature/new-vfxs. Asdasd asdqwe").is_err());
         assert!(validate_feature_branch_name("feature/new vfx").is_err());
         assert!(validate_feature_branch_name("feature//new-vfx").is_err());
+    }
+
+    #[test]
+    fn commit_reachability_ignores_internal_crongen_branches() {
+        let repo_path = temp_repo_path();
+        fs::create_dir_all(&repo_path).expect("create temp repo");
+
+        run_git(&repo_path, &["init", "-b", "main"]);
+        run_git(&repo_path, &["config", "user.name", "crongen-test"]);
+        run_git(
+            &repo_path,
+            &["config", "user.email", "crongen-test@example.com"],
+        );
+
+        fs::write(repo_path.join("feature.txt"), "base\n").expect("write base file");
+        run_git(&repo_path, &["add", "feature.txt"]);
+        run_git(&repo_path, &["commit", "-m", "base"]);
+
+        fs::write(repo_path.join("feature.txt"), "agent work\n").expect("write agent work");
+        run_git(&repo_path, &["commit", "-am", "agent work"]);
+        let agent_commit =
+            get_current_commit(repo_path.to_str().expect("utf8 path")).expect("agent commit");
+        run_git(
+            &repo_path,
+            &["branch", "crongen/generated/123", &agent_commit],
+        );
+        run_git(&repo_path, &["reset", "--hard", "HEAD~1"]);
+
+        assert!(!commit_is_reachable_from_user_branch(
+            repo_path.to_str().expect("utf8 path"),
+            &agent_commit,
+        )
+        .expect("internal branch reachability"));
+
+        run_git(&repo_path, &["branch", "feature/rain-fix", &agent_commit]);
+
+        assert!(commit_is_reachable_from_user_branch(
+            repo_path.to_str().expect("utf8 path"),
+            &agent_commit,
+        )
+        .expect("user branch reachability"));
+
+        let _ = fs::remove_dir_all(repo_path);
     }
 
     #[test]

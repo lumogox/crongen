@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -845,6 +846,121 @@ pub async fn toggle_project(
 
 // ─── Decision Tree (stubs for Phase 4+) ───────────────────────
 
+fn is_descendant_of(
+    node: &DecisionNode,
+    root_id: &str,
+    nodes_by_id: &HashMap<String, DecisionNode>,
+) -> bool {
+    if node.id == root_id {
+        return true;
+    }
+
+    let mut parent_id = node.parent_id.as_deref();
+    while let Some(id) = parent_id {
+        if id == root_id {
+            return true;
+        }
+        parent_id = nodes_by_id
+            .get(id)
+            .and_then(|parent| parent.parent_id.as_deref());
+    }
+    false
+}
+
+fn terminal_node_rank(node_type: Option<&str>) -> i32 {
+    match node_type {
+        Some("final") => 0,
+        Some("merge" | "synthesis") => 1,
+        _ => 2,
+    }
+}
+
+fn reconcile_shipped_sessions(conn: &Connection, project_id: &str) -> Result<usize, String> {
+    let project = db::project_get_by_id(conn, project_id).map_err(|e| format!("{e}"))?;
+    let nodes = db::node_get_tree(conn, project_id).map_err(|e| format!("{e}"))?;
+    let nodes_by_id: HashMap<String, DecisionNode> = nodes
+        .iter()
+        .map(|node| (node.id.clone(), node.clone()))
+        .collect();
+    let roots = nodes.iter().filter(|node| node.parent_id.is_none());
+    let mut reconciled = 0;
+
+    for root in roots {
+        if root.status == NodeStatus::Merged {
+            continue;
+        }
+
+        let subtree: Vec<&DecisionNode> = nodes
+            .iter()
+            .filter(|node| is_descendant_of(node, &root.id, &nodes_by_id))
+            .collect();
+        let runnable_nodes: Vec<&DecisionNode> = subtree
+            .iter()
+            .copied()
+            .filter(|node| node.node_type.as_deref() != Some("decision"))
+            .collect();
+        if runnable_nodes.is_empty()
+            || !runnable_nodes.iter().all(|node| {
+                matches!(
+                    node.status,
+                    NodeStatus::Completed | NodeStatus::Failed | NodeStatus::Merged
+                )
+            })
+        {
+            continue;
+        }
+
+        let child_ids: HashSet<&str> = subtree
+            .iter()
+            .filter_map(|node| node.parent_id.as_deref())
+            .collect();
+        let mut leaves: Vec<&DecisionNode> = subtree
+            .iter()
+            .copied()
+            .filter(|node| {
+                !child_ids.contains(node.id.as_str())
+                    && matches!(node.status, NodeStatus::Completed | NodeStatus::Merged)
+            })
+            .collect();
+        leaves.sort_by(|a, b| {
+            terminal_node_rank(a.node_type.as_deref())
+                .cmp(&terminal_node_rank(b.node_type.as_deref()))
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        });
+
+        let Some(terminal_node) = leaves.first() else {
+            continue;
+        };
+        let should_mark = terminal_node.status == NodeStatus::Merged
+            || terminal_node
+                .commit_hash
+                .as_deref()
+                .map(|commit_hash| {
+                    git_manager::commit_is_reachable_from_user_branch(
+                        &project.repo_path,
+                        commit_hash,
+                    )
+                    .unwrap_or_else(|err| {
+                        log::warn!(
+                            "Failed to reconcile shipped session {} from commit {}: {}",
+                            root.id,
+                            commit_hash,
+                            err
+                        );
+                        false
+                    })
+                })
+                .unwrap_or(false);
+
+        if should_mark {
+            db::node_mark_session_merged(conn, &terminal_node.id).map_err(|e| format!("{e}"))?;
+            reconciled += 1;
+        }
+    }
+
+    Ok(reconciled)
+}
+
 #[tauri::command]
 pub async fn get_decision_tree(
     state: State<'_, AppState>,
@@ -853,6 +969,15 @@ pub async fn get_decision_tree(
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        match reconcile_shipped_sessions(&conn, &project_id) {
+            Ok(count) if count > 0 => {
+                log::info!("Reconciled {count} shipped session(s) for project {project_id}");
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("Failed to reconcile shipped sessions for project {project_id}: {err}");
+            }
+        }
         db::node_get_tree(&conn, &project_id).map_err(|e| format!("DB error: {e}"))
     })
     .await
@@ -2099,6 +2224,15 @@ pub async fn get_root_nodes(
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
+        match reconcile_shipped_sessions(&conn, &project_id) {
+            Ok(count) if count > 0 => {
+                log::info!("Reconciled {count} shipped session(s) for project {project_id}");
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("Failed to reconcile shipped sessions for project {project_id}: {err}");
+            }
+        }
         db::node_get_roots(&conn, &project_id).map_err(|e| format!("DB error: {e}"))
     })
     .await
