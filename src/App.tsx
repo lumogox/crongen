@@ -12,6 +12,7 @@ import type {
   OrchestratorMode,
   OrchestratorStatus,
   PendingDecision,
+  PromptAttachment,
   Project,
 } from "./types";
 import {
@@ -700,7 +701,7 @@ function App() {
   );
 
   const handleConfirmPlanExpansion = useCallback(
-    async (prompt: string, complexity: "linear" | "branching", pathCount: number) => {
+    async (prompt: string, complexity: "linear" | "branching", pathCount: number, attachments: PromptAttachment[]) => {
       if (modal?.kind !== "expand_plan" || !selectedProjectId) return;
       if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
       try {
@@ -711,6 +712,7 @@ function App() {
           prompt,
           complexity,
           pathCount,
+          attachments,
         );
         setTreeNodes((prev) => {
           const next = [...prev, ...nodes];
@@ -894,10 +896,10 @@ function App() {
   // ─── Flow drawing handlers ────────────────────────────────
 
   const handleCreateSession = useCallback(
-    async (label: string, prompt: string) => {
+    async (label: string, prompt: string, attachments: PromptAttachment[]) => {
       if (!selectedProjectId) return;
       try {
-        const rootNode = await createRootNode(selectedProjectId, label, prompt);
+        const rootNode = await createRootNode(selectedProjectId, label, prompt, attachments);
         setFlowMode(inferFlowModeFromNodes([rootNode]));
         setSessions((prev) => [rootNode, ...prev]);
         setTreeNodes([rootNode]);
@@ -1086,7 +1088,7 @@ function App() {
   }, [orchestratorStatus]);
 
   const handleQuickRun = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, attachments: PromptAttachment[]) => {
       if (!selectedProjectId || !selectedProject) return;
       const executionAgent = settings.execution_agent ?? selectedProject.agent_type;
       if (!guardAgentRole("execution", executionAgent, "Execution")) return;
@@ -1099,7 +1101,7 @@ function App() {
           ? firstSentence
           : firstSentence.split(/\s+/).slice(0, 6).join(" ")
         ) || "Quick task";
-        rootNode = await createRootNode(selectedProjectId, label, prompt);
+        rootNode = await createRootNode(selectedProjectId, label, prompt, attachments);
         // Auto-run the node
         const updated = await runNode(rootNode.id);
         setFlowMode(inferFlowModeFromNodes([updated]));
@@ -1125,12 +1127,17 @@ function App() {
   );
 
   const handleGeneratePlan = useCallback(
-    async (prompt: string, complexity?: "linear" | "branching", pathCount?: number) => {
+    async (
+      prompt: string,
+      complexity?: "linear" | "branching",
+      pathCount?: number,
+      attachments?: PromptAttachment[],
+    ) => {
       if (!selectedProjectId) return;
       if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
       try {
         setIsGeneratingPlan(true);
-        const nodes = await generatePlan(selectedProjectId, prompt, complexity, pathCount);
+        const nodes = await generatePlan(selectedProjectId, prompt, complexity, pathCount, attachments);
         setFlowMode(inferFlowModeFromNodes(nodes));
         // Replace the current tree with the generated session plan.
         setTreeNodes(nodes);

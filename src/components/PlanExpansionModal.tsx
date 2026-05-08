@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { GitFork, Loader2, Sparkles } from "lucide-react";
-import type { DecisionNode } from "../types";
+import type { DecisionNode, PromptAttachment } from "../types";
 import { Dialog } from "@/components/ui/dialog";
 import {
   AppModalBody,
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PathCountControl } from "./PathCountControl";
+import { PromptAttachments } from "./PromptAttachments";
 
 type PlanComplexity = "linear" | "branching";
 
@@ -19,7 +20,7 @@ interface PlanExpansionModalProps {
   parentNode: DecisionNode;
   planningAgentLabel: string;
   isGenerating?: boolean;
-  onConfirm: (prompt: string, complexity: PlanComplexity, pathCount: number) => Promise<void>;
+  onConfirm: (prompt: string, complexity: PlanComplexity, pathCount: number, attachments: PromptAttachment[]) => Promise<void>;
   onClose: () => void;
 }
 
@@ -33,13 +34,14 @@ export function PlanExpansionModal({
   const [prompt, setPrompt] = useState("");
   const [complexity, setComplexity] = useState<PlanComplexity>("branching");
   const [pathCount, setPathCount] = useState(3);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   async function handleConfirm() {
     if (!prompt.trim()) return;
     setError(null);
     try {
-      await onConfirm(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1);
+      await onConfirm(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1, attachments);
     } catch (e) {
       setError(String(e));
     }
@@ -106,6 +108,7 @@ export function PlanExpansionModal({
               />
             )}
           </div>
+          <PromptAttachments attachments={attachments} onChange={setAttachments} disabled={isGenerating} />
           {error && (
             <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
               {error}

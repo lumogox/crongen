@@ -56,6 +56,7 @@ mod tests {
             }],
             sibling_diffs: vec![],
             parent_diff: None,
+            attached_context: None,
             directive: None,
         };
 

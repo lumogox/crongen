@@ -1,15 +1,17 @@
 use std::{
     collections::{HashMap, HashSet},
+    fs,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::Command;
 
 use crate::agent_templates;
+use crate::attachment_context::{self, PromptAttachmentInput};
 use crate::context;
 use crate::db;
 use crate::git_manager;
@@ -18,6 +20,7 @@ use crate::models::{
     ClaudeCodeConfig, CodexConfig, CodexModelCatalog, CodexModelOption, CodexReasoningLevel,
     CustomConfig, DecisionNode, ExecutionMode, GeminiConfig, NodeRuntimeValidation, NodeStatus,
     NodeTerminalSession, OrchestratorMode, OrchestratorState, OrchestratorStatus, Project,
+    PromptAttachment,
 };
 use crate::orchestrator::OrchestratorManager;
 use crate::plan_generator;
@@ -49,6 +52,21 @@ fn is_valid_structural_node_type(node_type: &str) -> bool {
 
 fn is_resolution_node_type(node_type: &str) -> bool {
     matches!(node_type, "merge" | "synthesis")
+}
+
+fn attachments_for_node(
+    attachments: Vec<PromptAttachment>,
+    project_id: &str,
+    node_id: &str,
+) -> Vec<PromptAttachment> {
+    attachments
+        .into_iter()
+        .map(|mut attachment| {
+            attachment.project_id = Some(project_id.to_string());
+            attachment.node_id = Some(node_id.to_string());
+            attachment
+        })
+        .collect()
 }
 
 #[derive(Debug, Serialize)]
@@ -842,6 +860,43 @@ pub async fn toggle_project(
         is_active
     );
     Ok(project)
+}
+
+#[tauri::command]
+pub async fn prepare_prompt_attachments(
+    app: AppHandle,
+    inputs: Vec<PromptAttachmentInput>,
+) -> Result<Vec<PromptAttachment>, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data directory: {e}"))?;
+
+    tokio::task::spawn_blocking(move || {
+        attachment_context::prepare_prompt_attachments(&app_data_dir, inputs)
+            .map_err(|e| format!("{e}"))
+    })
+    .await
+    .map_err(|e| format!("Task error: {e}"))?
+}
+
+#[tauri::command]
+pub async fn remove_prompt_attachment(stored_path: Option<String>) -> Result<(), String> {
+    if let Some(path) = stored_path {
+        tokio::task::spawn_blocking(move || {
+            if path.trim().is_empty() {
+                return Ok(());
+            }
+            match fs::remove_file(&path) {
+                Ok(_) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(format!("Failed to remove attachment file: {e}")),
+            }
+        })
+        .await
+        .map_err(|e| format!("Task error: {e}"))??;
+    }
+    Ok(())
 }
 
 // ─── Decision Tree (stubs for Phase 4+) ───────────────────────
@@ -1776,6 +1831,33 @@ pub async fn delete_node_branch(
         .map_err(|e| format!("Task error: {e}"))?
         .map_err(|e| format!("{e}"))?;
 
+    let attachment_paths = {
+        let db_paths = db2.clone();
+        let project_id = node.project_id.clone();
+        let node_ids = nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_paths.lock().map_err(|e| format!("DB lock error: {e}"))?;
+            db::prompt_attachments_for_nodes(&conn, &project_id, &node_ids)
+                .map_err(|e| format!("{e}"))
+                .map(|attachments| {
+                    attachments
+                        .into_iter()
+                        .filter_map(|attachment| attachment.stored_path)
+                        .collect::<Vec<_>>()
+                })
+        })
+        .await
+        .map_err(|e| format!("Task error: {e}"))??
+    };
+
+    for path in attachment_paths {
+        if let Err(err) = fs::remove_file(&path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("Failed to remove prompt attachment '{}': {err}", path);
+            }
+        }
+    }
+
     // 3. Delete node + descendants from DB
     let nid = node_id.clone();
     let deleted_ids = tokio::task::spawn_blocking(move || {
@@ -1801,7 +1883,7 @@ pub async fn delete_session(
     let db = state.db.clone();
     let sid = session_root_id.clone();
 
-    let (root, project, nodes) = tokio::task::spawn_blocking(move || {
+    let (root, project, nodes, attachment_paths) = tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         let root = db::node_get_by_id(&conn, &sid).map_err(|e| format!("{e}"))?;
         if root.parent_id.is_some() {
@@ -1810,7 +1892,13 @@ pub async fn delete_session(
 
         let project = db::project_get_by_id(&conn, &root.project_id).map_err(|e| format!("{e}"))?;
         let nodes = db::node_get_subtree(&conn, &root.id).map_err(|e| format!("{e}"))?;
-        Ok((root, project, nodes))
+        let node_ids = nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+        let attachment_paths = db::prompt_attachments_for_nodes(&conn, &root.project_id, &node_ids)
+            .map_err(|e| format!("{e}"))?
+            .into_iter()
+            .filter_map(|attachment| attachment.stored_path)
+            .collect::<Vec<_>>();
+        Ok((root, project, nodes, attachment_paths))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -1847,6 +1935,14 @@ pub async fn delete_session(
         .map_err(|e| format!("Task error: {e}"))?
         .map_err(|e| format!("{e}"))?;
 
+    for path in attachment_paths {
+        if let Err(err) = fs::remove_file(&path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                log::warn!("Failed to remove prompt attachment '{}': {err}", path);
+            }
+        }
+    }
+
     let db = state.db.clone();
     let sid = session_root_id.clone();
     let deleted_ids = tokio::task::spawn_blocking(move || {
@@ -1880,6 +1976,7 @@ pub async fn create_root_node(
     project_id: String,
     label: String,
     prompt: String,
+    attachments: Option<Vec<PromptAttachment>>,
 ) -> Result<DecisionNode, String> {
     let now = db::now_unix();
     let id = uuid::Uuid::new_v4().to_string();
@@ -1905,10 +2002,16 @@ pub async fn create_root_node(
     };
 
     let node_clone = node.clone();
+    let node_attachments =
+        attachments_for_node(attachments.unwrap_or_default(), &node.project_id, &node.id);
     let db = state.db.clone();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
-        db::node_create(&conn, &node_clone).map_err(|e| format!("{e}"))
+        db::node_create(&conn, &node_clone).map_err(|e| format!("{e}"))?;
+        for attachment in &node_attachments {
+            db::prompt_attachment_create(&conn, attachment).map_err(|e| format!("{e}"))?;
+        }
+        Ok::<(), String>(())
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -2846,6 +2949,7 @@ pub async fn generate_plan(
     prompt: String,
     complexity: Option<String>,
     path_count: Option<u32>,
+    attachments: Option<Vec<PromptAttachment>>,
 ) -> Result<Vec<DecisionNode>, String> {
     let settings = get_settings().await?;
     let planning_agent = resolve_planning_agent(&settings)?;
@@ -2885,9 +2989,12 @@ pub async fn generate_plan(
         .as_ref()
         .map(agent_config_extra_args)
         .unwrap_or(&[]);
+    let attachments = attachments.unwrap_or_default();
+    let attached_context = attachment_context::prompt_attachment_context(&attachments);
     let plan = plan_generator::generate_plan(
         &planning_agent,
         &prompt,
+        Some(attached_context.as_str()),
         &project_mode,
         planning_model.as_deref(),
         planning_extra_args,
@@ -2902,14 +3009,24 @@ pub async fn generate_plan(
 
     // Convert to nodes
     let nodes = plan_generator::plan_to_nodes(&plan, &project_id);
+    let root_id = nodes.first().map(|node| node.id.clone());
 
     // Batch insert into DB
     let db = state.db.clone();
     let nodes_clone = nodes.clone();
+    let attachment_project_id = project_id.clone();
+    let node_attachments = root_id
+        .as_deref()
+        .map(|node_id| attachments_for_node(attachments, &attachment_project_id, node_id))
+        .unwrap_or_default();
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         for node in &nodes_clone {
             db::node_create(&conn, node).map_err(|e| format!("DB error: {e}"))?;
+        }
+        for attachment in &node_attachments {
+            db::prompt_attachment_create(&conn, attachment)
+                .map_err(|e| format!("DB error: {e}"))?;
         }
         Ok::<(), String>(())
     })
@@ -2932,6 +3049,7 @@ pub async fn generate_plan_children(
     prompt: String,
     complexity: Option<String>,
     path_count: Option<u32>,
+    attachments: Option<Vec<PromptAttachment>>,
 ) -> Result<Vec<DecisionNode>, String> {
     let settings = get_settings().await?;
     let planning_agent = resolve_planning_agent(&settings)?;
@@ -2974,9 +3092,12 @@ pub async fn generate_plan_children(
         .as_ref()
         .map(agent_config_extra_args)
         .unwrap_or(&[]);
+    let attachments = attachments.unwrap_or_default();
+    let attached_context = attachment_context::prompt_attachment_context(&attachments);
     let plan = plan_generator::generate_plan(
         &planning_agent,
         &prompt,
+        Some(attached_context.as_str()),
         &project_mode,
         planning_model.as_deref(),
         planning_extra_args,
@@ -2995,10 +3116,15 @@ pub async fn generate_plan_children(
 
     let db = state.db.clone();
     let nodes_clone = nodes.clone();
+    let node_attachments = attachments_for_node(attachments, &project_id, &parent_id);
     tokio::task::spawn_blocking(move || {
         let conn = db.lock().map_err(|e| format!("DB lock error: {e}"))?;
         for node in &nodes_clone {
             db::node_create(&conn, node).map_err(|e| format!("DB error: {e}"))?;
+        }
+        for attachment in &node_attachments {
+            db::prompt_attachment_create(&conn, attachment)
+                .map_err(|e| format!("DB error: {e}"))?;
         }
         Ok::<(), String>(())
     })
@@ -3033,7 +3159,7 @@ pub async fn refine_plan(
     let db_read = state.db.clone();
     let pid = project_id.clone();
     let sid = session_root_id.clone();
-    let (project_mode, repo_path, current_nodes) = tokio::task::spawn_blocking(move || {
+    let (project_mode, repo_path, current_nodes, attachments) = tokio::task::spawn_blocking(move || {
         let conn = db_read.lock().map_err(|e| format!("DB lock: {e}"))?;
         let project = db::project_get_by_id(&conn, &pid).map_err(|e| format!("{e}"))?;
         let root = db::node_get_by_id(&conn, &sid).map_err(|e| format!("Root node: {e}"))?;
@@ -3076,7 +3202,15 @@ pub async fn refine_plan(
             project.project_mode
         };
 
-        Ok::<(String, String, Vec<DecisionNode>), String>((project_mode, project.repo_path, nodes))
+        let node_ids = nodes.iter().map(|node| node.id.clone()).collect::<Vec<_>>();
+        let attachments =
+            db::prompt_attachments_for_nodes(&conn, &pid, &node_ids).map_err(|e| format!("{e}"))?;
+        Ok::<(String, String, Vec<DecisionNode>, Vec<PromptAttachment>), String>((
+            project_mode,
+            project.repo_path,
+            nodes,
+            attachments,
+        ))
     })
     .await
     .map_err(|e| format!("Task error: {e}"))??;
@@ -3097,9 +3231,11 @@ pub async fn refine_plan(
         .map(agent_config_extra_args)
         .unwrap_or(&[]);
 
+    let attached_context = attachment_context::prompt_attachment_context(&attachments);
     let plan = plan_generator::refine_plan(
         &provider,
         &current_nodes,
+        Some(attached_context.as_str()),
         &project_mode,
         &lenses,
         guidance.as_deref(),
@@ -3117,11 +3253,20 @@ pub async fn refine_plan(
     let db_write = state.db.clone();
     let old_root = session_root_id.clone();
     let nodes_clone = refined_nodes.clone();
+    let new_root_id = refined_nodes
+        .first()
+        .map(|node| node.id.clone())
+        .unwrap_or_default();
+    let node_attachments = attachments_for_node(attachments, &project_id, &new_root_id);
     tokio::task::spawn_blocking(move || {
         let conn = db_write.lock().map_err(|e| format!("DB lock error: {e}"))?;
         db::node_delete_branch(&conn, &old_root).map_err(|e| format!("DB delete: {e}"))?;
         for node in &nodes_clone {
             db::node_create(&conn, node).map_err(|e| format!("DB insert: {e}"))?;
+        }
+        for attachment in &node_attachments {
+            db::prompt_attachment_create(&conn, attachment)
+                .map_err(|e| format!("DB insert: {e}"))?;
         }
         Ok::<(), String>(())
     })
@@ -3412,12 +3557,10 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--ignore-user-config"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "--output-last-message")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-last-message"));
         assert!(invocation.output_file.is_some());
     }
 
@@ -3433,12 +3576,10 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
     }
 
     #[test]
@@ -3455,30 +3596,22 @@ mod tests {
         assert_eq!(invocation.program, "gemini");
         assert_eq!(invocation.output_file, None);
         assert!(invocation.args.iter().any(|arg| arg == "--yolo"));
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--output-format", "json"])
-        );
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--model", "gemini-2.5-pro"])
-        );
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--include-directories", "../shared"])
-        );
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--prompt", "Resolve the merge"])
-        );
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--output-format", "json"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--model", "gemini-2.5-pro"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--prompt", "Resolve the merge"]));
     }
 
     #[test]

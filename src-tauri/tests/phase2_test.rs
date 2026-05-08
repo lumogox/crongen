@@ -32,6 +32,7 @@ fn test_db_init_creates_project_schema_and_crud() {
     assert!(table_exists(&conn, "projects"));
     assert!(table_exists(&conn, "decision_nodes"));
     assert!(table_exists(&conn, "orchestrator_sessions"));
+    assert!(table_exists(&conn, "prompt_attachments"));
     assert!(column_exists(&conn, "projects", "project_mode"));
     assert!(column_exists(&conn, "decision_nodes", "project_id"));
     assert!(column_exists(&conn, "decision_nodes", "started_at"));
@@ -45,7 +46,7 @@ fn test_db_init_creates_project_schema_and_crud() {
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 3);
+    assert_eq!(user_version, 4);
 
     let config = serde_json::json!({
         "type": "claude_code",
@@ -452,7 +453,7 @@ fn test_db_init_resets_legacy_agent_schema() {
     let user_version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(user_version, 3);
+    assert_eq!(user_version, 4);
 }
 
 #[test]

@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::models::{AgentType, AgentTypeConfig, DecisionNode, NodeStatus, Project};
+use crate::models::{
+    AgentType, AgentTypeConfig, DecisionNode, NodeStatus, Project, PromptAttachment,
+};
 
 // ─── Initialization ────────────────────────────────────────────
 
@@ -63,6 +65,24 @@ pub fn db_init(conn: &Connection) -> Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_nodes_project ON decision_nodes(project_id);
         CREATE INDEX IF NOT EXISTS idx_nodes_parent ON decision_nodes(parent_id);
+
+        CREATE TABLE IF NOT EXISTS prompt_attachments (
+            id                 TEXT PRIMARY KEY,
+            project_id         TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            node_id            TEXT REFERENCES decision_nodes(id) ON DELETE CASCADE,
+            name               TEXT NOT NULL,
+            mime_type          TEXT NOT NULL,
+            size_bytes         INTEGER NOT NULL,
+            kind               TEXT NOT NULL,
+            source             TEXT NOT NULL,
+            stored_path        TEXT,
+            converted_markdown TEXT NOT NULL,
+            status             TEXT NOT NULL,
+            warning            TEXT,
+            created_at         INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_prompt_attachments_node ON prompt_attachments(node_id);
         ",
     )?;
 
@@ -97,7 +117,7 @@ pub fn db_init(conn: &Connection) -> Result<()> {
         ",
     )?;
 
-    conn.pragma_update(None, "user_version", 3)?;
+    conn.pragma_update(None, "user_version", 4)?;
 
     Ok(())
 }
@@ -187,6 +207,24 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<DecisionNode> {
         started_at: row.get("started_at")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+    })
+}
+
+fn row_to_prompt_attachment(row: &rusqlite::Row) -> rusqlite::Result<PromptAttachment> {
+    Ok(PromptAttachment {
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        node_id: row.get("node_id")?,
+        name: row.get("name")?,
+        mime_type: row.get("mime_type")?,
+        size_bytes: row.get("size_bytes")?,
+        kind: row.get("kind")?,
+        source: row.get("source")?,
+        stored_path: row.get("stored_path")?,
+        converted_markdown: row.get("converted_markdown")?,
+        status: row.get("status")?,
+        warning: row.get("warning")?,
+        created_at: row.get("created_at")?,
     })
 }
 
@@ -323,6 +361,72 @@ pub fn node_create(conn: &Connection, node: &DecisionNode) -> Result<()> {
     )?;
 
     Ok(())
+}
+
+pub fn prompt_attachment_create(conn: &Connection, attachment: &PromptAttachment) -> Result<()> {
+    let project_id = attachment
+        .project_id
+        .as_deref()
+        .context("Prompt attachment missing project_id")?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO prompt_attachments
+         (id, project_id, node_id, name, mime_type, size_bytes, kind, source,
+          stored_path, converted_markdown, status, warning, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            attachment.id,
+            project_id,
+            attachment.node_id,
+            attachment.name,
+            attachment.mime_type,
+            attachment.size_bytes,
+            attachment.kind,
+            attachment.source,
+            attachment.stored_path,
+            attachment.converted_markdown,
+            attachment.status,
+            attachment.warning,
+            attachment.created_at,
+        ],
+    )?;
+
+    Ok(())
+}
+
+pub fn prompt_attachments_for_nodes(
+    conn: &Connection,
+    project_id: &str,
+    node_ids: &[String],
+) -> Result<Vec<PromptAttachment>> {
+    if node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders = std::iter::repeat("?")
+        .take(node_ids.len())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "SELECT id, project_id, node_id, name, mime_type, size_bytes, kind, source,
+                stored_path, converted_markdown, status, warning, created_at
+         FROM prompt_attachments
+         WHERE project_id = ? AND node_id IN ({placeholders})
+         ORDER BY created_at ASC"
+    );
+
+    let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(node_ids.len() + 1);
+    values.push(&project_id);
+    for node_id in node_ids {
+        values.push(node_id);
+    }
+
+    let mut stmt = conn.prepare(&sql)?;
+    let attachments = stmt
+        .query_map(values.as_slice(), row_to_prompt_attachment)?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(attachments)
 }
 
 pub fn node_get_tree(conn: &Connection, project_id: &str) -> Result<Vec<DecisionNode>> {

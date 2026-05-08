@@ -228,6 +228,24 @@ pub struct DecisionNode {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptAttachment {
+    pub id: String,
+    pub project_id: Option<String>,
+    pub node_id: Option<String>,
+    pub name: String,
+    pub mime_type: String,
+    pub size_bytes: i64,
+    pub kind: String,
+    pub source: String,
+    pub stored_path: Option<String>,
+    pub converted_markdown: String,
+    pub status: String,
+    pub warning: Option<String>,
+    pub created_at: i64,
+}
+
 // ─── Shell Execution (output of agent_templates) ───────────────
 
 /// A pattern→response pair for auto-answering interactive prompts.

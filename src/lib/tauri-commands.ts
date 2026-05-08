@@ -10,6 +10,8 @@ import type {
   NodeRuntimeValidation,
   NodeTerminalSession,
   OrchestratorStatus,
+  PromptAttachment,
+  PromptAttachmentInput,
   Project,
 } from "../types";
 import type { StructuralNodeType } from "../types/node-types";
@@ -123,8 +125,9 @@ export async function createRootNode(
   projectId: string,
   label: string,
   prompt: string,
+  attachments?: PromptAttachment[],
 ): Promise<DecisionNode> {
-  return invoke("create_root_node", { projectId, label, prompt });
+  return invoke("create_root_node", { projectId, label, prompt, attachments });
 }
 
 export async function runNode(nodeId: string): Promise<DecisionNode> {
@@ -332,8 +335,9 @@ export async function generatePlan(
   prompt: string,
   complexity?: "linear" | "branching",
   pathCount?: number,
+  attachments?: PromptAttachment[],
 ): Promise<DecisionNode[]> {
-  return invoke("generate_plan", { projectId, prompt, complexity, pathCount });
+  return invoke("generate_plan", { projectId, prompt, complexity, pathCount, attachments });
 }
 
 export async function generatePlanChildren(
@@ -342,8 +346,19 @@ export async function generatePlanChildren(
   prompt: string,
   complexity?: "linear" | "branching",
   pathCount?: number,
+  attachments?: PromptAttachment[],
 ): Promise<DecisionNode[]> {
-  return invoke("generate_plan_children", { projectId, parentId, prompt, complexity, pathCount });
+  return invoke("generate_plan_children", { projectId, parentId, prompt, complexity, pathCount, attachments });
+}
+
+export async function preparePromptAttachments(
+  inputs: PromptAttachmentInput[],
+): Promise<PromptAttachment[]> {
+  return invoke("prepare_prompt_attachments", { inputs });
+}
+
+export async function removePromptAttachment(storedPath?: string | null): Promise<void> {
+  return invoke("remove_prompt_attachment", { storedPath });
 }
 
 export async function refinePlan(params: {

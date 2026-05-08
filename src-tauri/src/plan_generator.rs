@@ -514,6 +514,7 @@ fn extract_json_object(text: &str) -> Option<&str> {
 pub async fn generate_plan(
     provider: &AgentType,
     prompt: &str,
+    attached_context: Option<&str>,
     project_mode: &str,
     model: Option<&str>,
     extra_args: &[String],
@@ -523,7 +524,12 @@ pub async fn generate_plan(
 ) -> Result<GeneratedPlan, String> {
     let system_prompt = planner_system_prompt(project_mode, complexity);
     let path_guidance = plan_path_count_guidance(complexity, path_count);
-    let full_prompt = format!("{system_prompt}\n\n{path_guidance}\n\nUser task: {prompt}");
+    let full_prompt = match attached_context.filter(|value| !value.trim().is_empty()) {
+        Some(context) => {
+            format!("{system_prompt}\n\n{path_guidance}\n\n{context}\n\nUser task: {prompt}")
+        }
+        None => format!("{system_prompt}\n\n{path_guidance}\n\nUser task: {prompt}"),
+    };
     let raw_output = run_planner(provider, &full_prompt, model, extra_args, repo_path).await?;
     let stdout = raw_output.as_str();
 
@@ -606,6 +612,7 @@ pub async fn generate_plan(
 pub async fn refine_plan(
     provider: &AgentType,
     current_nodes: &[DecisionNode],
+    attached_context: Option<&str>,
     project_mode: &str,
     lenses: &[String],
     guidance: Option<&str>,
@@ -630,9 +637,14 @@ pub async fn refine_plan(
         "This may be a blank project. Keep any needed setup scoped to the root task."
     };
 
-    let full_prompt = format!(
-        "{REFINE_SYSTEM_PROMPT}\n\nProject mode: {project_mode}\n{mode_guidance}\n\nRefinement lenses: {lens_text}\n\nUser guidance:\n{guidance_text}\n\nCurrent flow JSON:\n{current_flow_json}"
-    );
+    let full_prompt = match attached_context.filter(|value| !value.trim().is_empty()) {
+        Some(context) => format!(
+            "{REFINE_SYSTEM_PROMPT}\n\nProject mode: {project_mode}\n{mode_guidance}\n\n{context}\n\nRefinement lenses: {lens_text}\n\nUser guidance:\n{guidance_text}\n\nCurrent flow JSON:\n{current_flow_json}"
+        ),
+        None => format!(
+            "{REFINE_SYSTEM_PROMPT}\n\nProject mode: {project_mode}\n{mode_guidance}\n\nRefinement lenses: {lens_text}\n\nUser guidance:\n{guidance_text}\n\nCurrent flow JSON:\n{current_flow_json}"
+        ),
+    };
     let raw_output = run_planner(provider, &full_prompt, model, extra_args, repo_path).await?;
 
     if let Some(json_str) = extract_json_object(&raw_output) {
@@ -797,9 +809,9 @@ mod tests {
     use std::fs;
 
     use super::{
-        GeneratedPlan, PlanNode, build_planner_invocation, cleanup_output_file,
-        codex_model_requires_default_retry, normalize_plan_for_complexity, plan_children_to_nodes,
-        plan_path_count_guidance, write_plan_output_schema,
+        build_planner_invocation, cleanup_output_file, codex_model_requires_default_retry,
+        normalize_plan_for_complexity, plan_children_to_nodes, plan_path_count_guidance,
+        write_plan_output_schema, GeneratedPlan, PlanNode,
     };
     use crate::models::AgentType;
 
@@ -858,12 +870,10 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--ignore-user-config"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "--output-last-message")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "--output-last-message"));
         assert!(invocation.args.iter().any(|arg| arg == "--output-schema"));
         assert!(invocation.output_file.is_some());
         cleanup_output_file(invocation.output_file.as_ref());
@@ -882,12 +892,10 @@ mod tests {
         .expect("codex invocation");
 
         assert!(invocation.args.iter().any(|arg| arg == "-c"));
-        assert!(
-            invocation
-                .args
-                .iter()
-                .any(|arg| arg == "model_reasoning_effort=\"medium\"")
-        );
+        assert!(invocation
+            .args
+            .iter()
+            .any(|arg| arg == "model_reasoning_effort=\"medium\""));
         cleanup_output_file(invocation.output_file.as_ref());
         cleanup_output_file(invocation.schema_file.as_ref());
     }
@@ -915,18 +923,14 @@ mod tests {
 
         assert_eq!(invocation.program, "gemini");
         assert!(invocation.args.iter().any(|arg| arg == "--prompt"));
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--approval-mode", "plan"])
-        );
-        assert!(
-            invocation
-                .args
-                .windows(2)
-                .any(|pair| pair == ["--include-directories", "../shared"])
-        );
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--approval-mode", "plan"]));
+        assert!(invocation
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--include-directories", "../shared"]));
         assert!(invocation.args.iter().any(|arg| arg == "--output-format"));
         assert!(invocation.args.iter().any(|arg| arg == "json"));
         assert!(invocation.output_file.is_none());

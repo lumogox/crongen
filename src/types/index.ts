@@ -114,6 +114,32 @@ export interface DecisionNode {
   updated_at: number;
 }
 
+export interface PromptAttachmentInput {
+  name: string;
+  mimeType?: string | null;
+  kind?: string | null;
+  source: "file" | "paste";
+  path?: string | null;
+  text?: string | null;
+  dataUrl?: string | null;
+}
+
+export interface PromptAttachment {
+  id: string;
+  projectId?: string | null;
+  nodeId?: string | null;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: string;
+  source: string;
+  storedPath?: string | null;
+  convertedMarkdown: string;
+  status: string;
+  warning?: string | null;
+  createdAt: number;
+}
+
 export interface NodeRuntimeValidation {
   node: DecisionNode;
   session_active: boolean;

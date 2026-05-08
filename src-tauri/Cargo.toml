@@ -55,6 +55,7 @@ toon-format = "0.4"
 # Utilities
 which = "7"
 dirs = "6"
+markitdown = "0.1.11"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

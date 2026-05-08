@@ -1,4 +1,5 @@
 mod agent_templates;
+mod attachment_context;
 mod commands;
 mod context;
 mod db;
@@ -87,6 +88,8 @@ pub fn run() {
             commands::check_env_var,
             commands::get_agent_provider_statuses,
             commands::get_codex_model_catalog,
+            commands::prepare_prompt_attachments,
+            commands::remove_prompt_attachment,
             // PTY
             commands::write_pty,
             commands::resize_pty,

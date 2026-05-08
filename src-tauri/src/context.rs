@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::attachment_context;
 use crate::db;
 use crate::git_manager;
 use crate::models::DecisionNode;
@@ -46,6 +47,7 @@ pub struct ExecutionContext {
     pub sibling_info: Vec<SiblingInfo>,
     pub sibling_diffs: Vec<SiblingDiff>,
     pub parent_diff: Option<ParentDiff>,
+    pub attached_context: Option<String>,
     pub directive: Option<String>,
 }
 
@@ -80,6 +82,18 @@ pub fn build_execution_context(
     repo_path: Option<&str>,
 ) -> anyhow::Result<ExecutionContext> {
     let ancestors = build_ancestor_chain(conn, node)?;
+    let mut context_node_ids: Vec<String> =
+        ancestors.iter().map(|entry| entry.id.clone()).collect();
+    context_node_ids.push(node.id.clone());
+    let attachments = db::prompt_attachments_for_nodes(conn, &node.project_id, &context_node_ids)?;
+    let attached_context = {
+        let rendered = attachment_context::prompt_attachment_context(&attachments);
+        if rendered.is_empty() {
+            None
+        } else {
+            Some(rendered)
+        }
+    };
 
     // Session info comes from the root node (first ancestor or self if root)
     let (session_label, session_goal) = if let Some(root) = ancestors.first() {
@@ -292,6 +306,7 @@ pub fn build_execution_context(
         sibling_info,
         sibling_diffs,
         parent_diff,
+        attached_context,
         directive,
     })
 }

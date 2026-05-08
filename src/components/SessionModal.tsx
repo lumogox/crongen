@@ -12,14 +12,16 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { PathCountControl } from "./PathCountControl";
+import { PromptAttachments } from "./PromptAttachments";
 import { Sparkles, PenLine, Loader2, TriangleAlert, Zap, Settings2, CheckCircle2 } from "lucide-react";
+import type { PromptAttachment } from "../types";
 
 type PlanComplexity = "linear" | "branching";
 
 interface SessionModalProps {
-  onConfirm: (label: string, prompt: string) => void;
-  onQuickRun?: (prompt: string) => Promise<void>;
-  onGeneratePlan?: (prompt: string, complexity: PlanComplexity, pathCount: number) => Promise<void>;
+  onConfirm: (label: string, prompt: string, attachments: PromptAttachment[]) => void;
+  onQuickRun?: (prompt: string, attachments: PromptAttachment[]) => Promise<void>;
+  onGeneratePlan?: (prompt: string, complexity: PlanComplexity, pathCount: number, attachments: PromptAttachment[]) => Promise<void>;
   isGenerating?: boolean;
   planningAgentLabel: string;
   executionAgentLabel: string;
@@ -46,13 +48,14 @@ export function SessionModal({
   const [prompt, setPrompt] = useState("");
   const [complexity, setComplexity] = useState<PlanComplexity>("linear");
   const [pathCount, setPathCount] = useState(3);
+  const [attachments, setAttachments] = useState<PromptAttachment[]>([]);
   const [genError, setGenError] = useState<string | null>(null);
 
   async function handleGenerate() {
     if (!onGeneratePlan || !prompt.trim()) return;
     setGenError(null);
     try {
-      await onGeneratePlan(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1);
+      await onGeneratePlan(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1, attachments);
     } catch (e) {
       setGenError(String(e));
     }
@@ -62,7 +65,7 @@ export function SessionModal({
     if (!onQuickRun || !prompt.trim()) return;
     setGenError(null);
     try {
-      await onQuickRun(prompt.trim());
+      await onQuickRun(prompt.trim(), attachments);
     } catch (e) {
       setGenError(String(e));
     }
@@ -206,6 +209,12 @@ export function SessionModal({
             )}
           </div>
 
+          <PromptAttachments
+            attachments={attachments}
+            onChange={setAttachments}
+            disabled={isGenerating}
+          />
+
           {/* Complexity selector for plan generation */}
           {mode === "generate" && (
             <div className="space-y-2">
@@ -279,7 +288,7 @@ export function SessionModal({
           ) : mode === "manual" ? (
             <Button
               disabled={!label.trim() || !prompt.trim()}
-              onClick={() => onConfirm(label.trim(), prompt.trim())}
+              onClick={() => onConfirm(label.trim(), prompt.trim(), attachments)}
             >
               Create task
             </Button>
