@@ -9,9 +9,9 @@ import {
   AppModalHeader,
 } from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PathCountControl } from "./PathCountControl";
 
 type PlanComplexity = "linear" | "branching";
 
@@ -98,28 +98,12 @@ export function PlanExpansionModal({
               </button>
             </div>
             {complexity === "branching" && (
-              <div className="rounded-xl border border-slate-700/70 bg-[#121a2a] p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <Label htmlFor="child-plan-path-count">Paths to explore</Label>
-                    <div className="mt-1 text-[11px] leading-snug text-slate-400">
-                      Number of alternative child paths before compare or synthesize.
-                    </div>
-                  </div>
-                  <Input
-                    id="child-plan-path-count"
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={pathCount}
-                    onChange={(event) => {
-                      const next = Number.parseInt(event.target.value, 10);
-                      setPathCount(Number.isFinite(next) ? Math.min(10, Math.max(1, next)) : 1);
-                    }}
-                    className="h-9 w-20 text-center"
-                  />
-                </div>
-              </div>
+              <PathCountControl
+                id="child-plan-path-count"
+                value={pathCount}
+                onChange={setPathCount}
+                description="Number of alternative child paths before compare or synthesize."
+              />
             )}
           </div>
           {error && (
