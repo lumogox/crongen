@@ -196,7 +196,7 @@ function ExecutionNodeInner({
           </div>
 
           <div className="flex shrink-0 items-start gap-2">
-            {onOpenNodeTerminal && (
+            {onOpenNodeTerminal && node.worktree_path && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -207,7 +207,7 @@ function ExecutionNodeInner({
                     ? "opacity-100"
                     : "opacity-0 group-hover/node:opacity-100"
                 }`}
-                title={node.worktree_path ? "Open agent terminal in worktree" : "Open agent terminal on repo"}
+                title="Open agent terminal in worktree"
               >
                 <SquareTerminal className="h-3.5 w-3.5" />
               </button>

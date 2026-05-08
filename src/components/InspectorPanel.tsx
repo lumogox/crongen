@@ -524,14 +524,14 @@ export function InspectorPanel({
                   </Button>
                 )}
               {/* Universal: Pause / Resume / Delete */}
-              {onOpenTerminal && (
+              {onOpenTerminal && node.worktree_path && (
                 <Button
                   variant="outline"
                   onClick={() => onOpenTerminal(node.id)}
                   className="justify-start rounded-2xl border-sky-400/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/20"
                 >
                   <SquareTerminal className="mr-2 h-4 w-4" />
-                  {node.worktree_path ? "Open agent in worktree" : "Open agent on repo"}
+                  Open agent in worktree
                 </Button>
               )}
               {canPause && (

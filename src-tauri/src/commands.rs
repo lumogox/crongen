@@ -667,14 +667,17 @@ fn node_has_active_runtime(state: &AppState, node: &DecisionNode) -> bool {
         .is_some()
 }
 
-fn resolve_node_terminal_cwd(node: &DecisionNode, project: &Project) -> String {
+fn resolve_node_terminal_cwd(node: &DecisionNode) -> Result<String, String> {
     if let Some(worktree_path) = node.worktree_path.as_ref() {
         if std::path::Path::new(worktree_path).exists() {
-            return worktree_path.clone();
+            return Ok(worktree_path.clone());
         }
     }
 
-    project.repo_path.clone()
+    Err(
+        "Agent terminals can only be opened for completed nodes with an existing worktree."
+            .to_string(),
+    )
 }
 
 // ─── Project CRUD ──────────────────────────────────────────────
@@ -2427,7 +2430,7 @@ pub async fn open_node_terminal(
     .await
     .map_err(|e| format!("Task error: {e}"))??;
 
-    let cwd = resolve_node_terminal_cwd(&node, &project);
+    let cwd = resolve_node_terminal_cwd(&node)?;
     let session_id = manual_terminal_session_id(&node.id);
     let settings = get_settings().await.ok();
     let effective_agent = effective_node_agent(&node, &project, settings.as_ref());
@@ -3375,7 +3378,8 @@ mod tests {
     use super::{
         build_merge_resolution_invocation, classify_codex_login_status, effective_node_agent,
         is_resolution_node_type, is_valid_structural_node_type, parse_claude_auth_logged_in,
-        parse_codex_model_catalog, resolve_node_agent_config, role_requires_provider_validation,
+        parse_codex_model_catalog, resolve_node_agent_config, resolve_node_terminal_cwd,
+        role_requires_provider_validation,
     };
     use crate::models::{
         AgentCliConfigs, AgentProviderStatus, AgentType, AgentTypeConfig, AppSettings,
@@ -3432,6 +3436,32 @@ mod tests {
         assert!(is_resolution_node_type("synthesis"));
         assert!(!is_resolution_node_type("agent"));
         assert!(!is_resolution_node_type("final"));
+    }
+
+    #[test]
+    fn terminal_cwd_requires_existing_worktree() {
+        let node = test_node(None);
+
+        let error = resolve_node_terminal_cwd(&node).expect_err("missing worktree should fail");
+
+        assert!(error.contains("existing worktree"));
+    }
+
+    #[test]
+    fn terminal_cwd_uses_node_worktree() {
+        let dir = std::env::temp_dir().join(format!(
+            "crongen-terminal-worktree-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut node = test_node(None);
+        node.worktree_path = Some(dir.to_string_lossy().to_string());
+        node.status = NodeStatus::Completed;
+
+        let cwd = resolve_node_terminal_cwd(&node).expect("existing worktree should be terminal cwd");
+
+        assert_eq!(cwd, dir.to_string_lossy());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

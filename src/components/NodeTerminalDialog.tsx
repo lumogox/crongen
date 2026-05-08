@@ -31,10 +31,6 @@ export function ConfirmOpenTerminalDialog({
 }: ConfirmOpenTerminalDialogProps) {
   if (!open || !node) return null;
 
-  const locationLabel = node.worktree_path
-    ? "This node's worktree"
-    : "The merged repo checkout";
-
   return (
     <Dialog open={open}>
       <AppModalContent
@@ -59,7 +55,7 @@ export function ConfirmOpenTerminalDialog({
             <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
               Location
             </div>
-            <div className="mt-2 text-sm text-slate-100">{locationLabel}</div>
+            <div className="mt-2 text-sm text-slate-100">This node&apos;s worktree</div>
             {node.worktree_path ? (
               <div
                 className="mt-2 break-all font-mono text-xs leading-5 text-slate-400"
@@ -69,7 +65,7 @@ export function ConfirmOpenTerminalDialog({
               </div>
             ) : (
               <div className="mt-2 text-xs text-slate-400">
-                If the worktree is gone, we open the agent on the repo branch instead.
+                This node does not have an available worktree yet. Run it successfully before opening a terminal.
               </div>
             )}
           </div>
