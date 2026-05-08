@@ -9,6 +9,7 @@ import {
   AppModalHeader,
 } from "@/components/ui/app-modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -18,7 +19,7 @@ interface PlanExpansionModalProps {
   parentNode: DecisionNode;
   planningAgentLabel: string;
   isGenerating?: boolean;
-  onConfirm: (prompt: string, complexity: PlanComplexity) => Promise<void>;
+  onConfirm: (prompt: string, complexity: PlanComplexity, pathCount: number) => Promise<void>;
   onClose: () => void;
 }
 
@@ -31,13 +32,14 @@ export function PlanExpansionModal({
 }: PlanExpansionModalProps) {
   const [prompt, setPrompt] = useState("");
   const [complexity, setComplexity] = useState<PlanComplexity>("branching");
+  const [pathCount, setPathCount] = useState(3);
   const [error, setError] = useState<string | null>(null);
 
   async function handleConfirm() {
     if (!prompt.trim()) return;
     setError(null);
     try {
-      await onConfirm(prompt.trim(), complexity);
+      await onConfirm(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1);
     } catch (e) {
       setError(String(e));
     }
@@ -95,6 +97,30 @@ export function PlanExpansionModal({
                 <div className="mt-1 text-[11px] text-slate-400">Approaches, compare or synthesize, then finish</div>
               </button>
             </div>
+            {complexity === "branching" && (
+              <div className="rounded-xl border border-slate-700/70 bg-[#121a2a] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label htmlFor="child-plan-path-count">Paths to explore</Label>
+                    <div className="mt-1 text-[11px] leading-snug text-slate-400">
+                      Number of alternative child paths before compare or synthesize.
+                    </div>
+                  </div>
+                  <Input
+                    id="child-plan-path-count"
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={pathCount}
+                    onChange={(event) => {
+                      const next = Number.parseInt(event.target.value, 10);
+                      setPathCount(Number.isFinite(next) ? Math.min(10, Math.max(1, next)) : 1);
+                    }}
+                    className="h-9 w-20 text-center"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           {error && (
             <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">

@@ -18,7 +18,7 @@ type PlanComplexity = "linear" | "branching";
 interface SessionModalProps {
   onConfirm: (label: string, prompt: string) => void;
   onQuickRun?: (prompt: string) => Promise<void>;
-  onGeneratePlan?: (prompt: string, complexity: PlanComplexity) => Promise<void>;
+  onGeneratePlan?: (prompt: string, complexity: PlanComplexity, pathCount: number) => Promise<void>;
   isGenerating?: boolean;
   planningAgentLabel: string;
   executionAgentLabel: string;
@@ -44,13 +44,14 @@ export function SessionModal({
   const [label, setLabel] = useState("");
   const [prompt, setPrompt] = useState("");
   const [complexity, setComplexity] = useState<PlanComplexity>("linear");
+  const [pathCount, setPathCount] = useState(3);
   const [genError, setGenError] = useState<string | null>(null);
 
   async function handleGenerate() {
     if (!onGeneratePlan || !prompt.trim()) return;
     setGenError(null);
     try {
-      await onGeneratePlan(prompt.trim(), complexity);
+      await onGeneratePlan(prompt.trim(), complexity, complexity === "branching" ? pathCount : 1);
     } catch (e) {
       setGenError(String(e));
     }
@@ -83,6 +84,8 @@ export function SessionModal({
                 ? "Create the first runnable task, then add branches or follow-up nodes on the canvas."
                 : activeAgentLabel === "Unconfigured"
                   ? "Describe the task and connect a planning agent first."
+                : complexity === "branching"
+                  ? `Describe the task and ${planningAgentLabel} will explore ${pathCount} path${pathCount === 1 ? "" : "s"}.`
                   : `Describe the task and ${planningAgentLabel} will generate a single-path execution plan.`
           }
         />
@@ -187,7 +190,9 @@ export function SessionModal({
                 mode === "quick"
                   ? "e.g. Add undo/redo to the calculator using a history stack"
                   : mode === "generate"
-                    ? `Describe the task in detail. ${planningAgentLabel} will break it down into a single execution chain.`
+                    ? complexity === "branching"
+                      ? `Describe the task in detail. ${planningAgentLabel} will explore ${pathCount} path${pathCount === 1 ? "" : "s"} before resolving the plan.`
+                      : `Describe the task in detail. ${planningAgentLabel} will break it down into a single execution chain.`
                     : "Describe what this root task should do when you run it."
               }
               rows={mode === "quick" ? 3 : mode === "generate" ? 6 : 4}
@@ -230,6 +235,30 @@ export function SessionModal({
                   <div className="text-[11px] text-slate-400">Compare or synthesize approaches</div>
                 </button>
               </div>
+              {complexity === "branching" && (
+                <div className="rounded-xl border border-slate-700/70 bg-[#121a2a] p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label htmlFor="plan-path-count">Paths to explore</Label>
+                      <div className="mt-1 text-[11px] leading-snug text-slate-400">
+                        Number of alternative work paths before compare or synthesize.
+                      </div>
+                    </div>
+                    <Input
+                      id="plan-path-count"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={pathCount}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10);
+                        setPathCount(Number.isFinite(next) ? Math.min(10, Math.max(1, next)) : 1);
+                      }}
+                      className="h-9 w-20 text-center"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           </div>

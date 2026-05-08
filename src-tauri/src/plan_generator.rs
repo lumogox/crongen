@@ -204,6 +204,22 @@ fn planner_system_prompt(project_mode: &str, complexity: &str) -> &'static str {
     }
 }
 
+fn plan_path_count_guidance(complexity: &str, path_count: u32) -> String {
+    if complexity == "linear" {
+        return "Path count: 1. Generate one direct execution chain with no decision, merge, synthesis, or final nodes.".to_string();
+    }
+
+    let path_count = path_count.clamp(1, 10);
+    if path_count == 1 {
+        return "Path count: 1. Generate one direct implementation path: root task with one agent child, optionally followed by validation. Do NOT create a decision, merge, or synthesis node because there are no alternatives to compare.".to_string();
+    }
+
+    format!(
+        "Path count: {path_count}. This overrides any generic examples above. Generate exactly {path_count} alternative agent children under the decision node before the merge or synthesis node. Do not generate fewer or more alternative paths. The total node limit is {max_nodes} nodes.",
+        max_nodes = path_count + 4
+    )
+}
+
 /// Normalize a generated plan for the requested complexity.
 ///
 /// Linear plans are forced into a single chain so the canvas renders as a
@@ -502,10 +518,12 @@ pub async fn generate_plan(
     model: Option<&str>,
     extra_args: &[String],
     complexity: &str,
+    path_count: u32,
     repo_path: &str,
 ) -> Result<GeneratedPlan, String> {
     let system_prompt = planner_system_prompt(project_mode, complexity);
-    let full_prompt = format!("{system_prompt}\n\nUser task: {prompt}");
+    let path_guidance = plan_path_count_guidance(complexity, path_count);
+    let full_prompt = format!("{system_prompt}\n\n{path_guidance}\n\nUser task: {prompt}");
     let raw_output = run_planner(provider, &full_prompt, model, extra_args, repo_path).await?;
     let stdout = raw_output.as_str();
 
@@ -781,7 +799,7 @@ mod tests {
     use super::{
         GeneratedPlan, PlanNode, build_planner_invocation, cleanup_output_file,
         codex_model_requires_default_retry, normalize_plan_for_complexity, plan_children_to_nodes,
-        write_plan_output_schema,
+        plan_path_count_guidance, write_plan_output_schema,
     };
     use crate::models::AgentType;
 
@@ -808,6 +826,19 @@ mod tests {
 
         assert!(schema.contains("\"synthesis\""));
         cleanup_output_file(Some(&schema_file));
+    }
+
+    #[test]
+    fn path_count_guidance_controls_branch_width() {
+        let guidance = plan_path_count_guidance("branching", 4);
+        assert!(guidance.contains("exactly 4 alternative agent children"));
+        assert!(guidance.contains("total node limit is 8 nodes"));
+
+        let single_path = plan_path_count_guidance("branching", 1);
+        assert!(single_path.contains("Do NOT create a decision"));
+
+        let clamped = plan_path_count_guidance("branching", 99);
+        assert!(clamped.contains("Path count: 10"));
     }
 
     #[test]

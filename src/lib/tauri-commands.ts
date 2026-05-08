@@ -331,8 +331,9 @@ export async function generatePlan(
   projectId: string,
   prompt: string,
   complexity?: "linear" | "branching",
+  pathCount?: number,
 ): Promise<DecisionNode[]> {
-  return invoke("generate_plan", { projectId, prompt, complexity });
+  return invoke("generate_plan", { projectId, prompt, complexity, pathCount });
 }
 
 export async function generatePlanChildren(
@@ -340,8 +341,9 @@ export async function generatePlanChildren(
   parentId: string,
   prompt: string,
   complexity?: "linear" | "branching",
+  pathCount?: number,
 ): Promise<DecisionNode[]> {
-  return invoke("generate_plan_children", { projectId, parentId, prompt, complexity });
+  return invoke("generate_plan_children", { projectId, parentId, prompt, complexity, pathCount });
 }
 
 export async function refinePlan(params: {

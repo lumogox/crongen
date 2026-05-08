@@ -2845,6 +2845,7 @@ pub async fn generate_plan(
     project_id: String,
     prompt: String,
     complexity: Option<String>,
+    path_count: Option<u32>,
 ) -> Result<Vec<DecisionNode>, String> {
     let settings = get_settings().await?;
     let planning_agent = resolve_planning_agent(&settings)?;
@@ -2874,6 +2875,7 @@ pub async fn generate_plan(
 
     // Generate the plan via the selected planning provider
     let complexity_str = complexity.as_deref().unwrap_or("branching");
+    let path_count = path_count.unwrap_or(if complexity_str == "branching" { 3 } else { 1 });
     let planning_config = settings_agent_config(&planning_agent, Some(&settings));
     let planning_model = planning_config
         .as_ref()
@@ -2890,6 +2892,7 @@ pub async fn generate_plan(
         planning_model.as_deref(),
         planning_extra_args,
         complexity_str,
+        path_count,
         &repo_path,
     )
     .await?;
@@ -2928,6 +2931,7 @@ pub async fn generate_plan_children(
     parent_id: String,
     prompt: String,
     complexity: Option<String>,
+    path_count: Option<u32>,
 ) -> Result<Vec<DecisionNode>, String> {
     let settings = get_settings().await?;
     let planning_agent = resolve_planning_agent(&settings)?;
@@ -2960,6 +2964,7 @@ pub async fn generate_plan_children(
     .map_err(|e| format!("Task error: {e}"))??;
 
     let complexity_str = complexity.as_deref().unwrap_or("branching");
+    let path_count = path_count.unwrap_or(if complexity_str == "branching" { 3 } else { 1 });
     let planning_config = settings_agent_config(&planning_agent, Some(&settings));
     let planning_model = planning_config
         .as_ref()
@@ -2976,6 +2981,7 @@ pub async fn generate_plan_children(
         planning_model.as_deref(),
         planning_extra_args,
         complexity_str,
+        path_count,
         &repo_path,
     )
     .await?;

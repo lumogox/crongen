@@ -700,7 +700,7 @@ function App() {
   );
 
   const handleConfirmPlanExpansion = useCallback(
-    async (prompt: string, complexity: "linear" | "branching") => {
+    async (prompt: string, complexity: "linear" | "branching", pathCount: number) => {
       if (modal?.kind !== "expand_plan" || !selectedProjectId) return;
       if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
       try {
@@ -710,6 +710,7 @@ function App() {
           modal.parentId,
           prompt,
           complexity,
+          pathCount,
         );
         setTreeNodes((prev) => {
           const next = [...prev, ...nodes];
@@ -1124,12 +1125,12 @@ function App() {
   );
 
   const handleGeneratePlan = useCallback(
-    async (prompt: string, complexity?: "linear" | "branching") => {
+    async (prompt: string, complexity?: "linear" | "branching", pathCount?: number) => {
       if (!selectedProjectId) return;
       if (!guardAgentRole("planning", settings.planning_agent, "Planning")) return;
       try {
         setIsGeneratingPlan(true);
-        const nodes = await generatePlan(selectedProjectId, prompt, complexity);
+        const nodes = await generatePlan(selectedProjectId, prompt, complexity, pathCount);
         setFlowMode(inferFlowModeFromNodes(nodes));
         // Replace the current tree with the generated session plan.
         setTreeNodes(nodes);
